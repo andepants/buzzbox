@@ -6,7 +6,8 @@
     // Structure: /messages/{conversationId}/{messageId}
     "messages": {
       "$conversationId": {
-        ".read": "auth != null",
+        // Only participants of the conversation can read messages
+        ".read": "auth != null && root.child('conversations').child($conversationId).child('participantIDs').child(auth.uid).exists()",
         "$messageId": {
           ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid)"
         }
@@ -16,8 +17,17 @@
     // ============================================
     // CONVERSATIONS (Metadata and ephemeral data)
     // ============================================
+    // Structure: /conversations/{conversationId}
     "conversations": {
       "$conversationId": {
+        // Participants can read the conversation
+        ".read": "auth != null && data.child('participantIDs').child(auth.uid).exists()",
+
+        // Participants can write (create/update conversation)
+        // Allow creation if user is in new participantIDs
+        // Allow update if user is already a participant
+        ".write": "auth != null && ((!data.exists() && newData.child('participantIDs').child(auth.uid).exists()) || (data.exists() && data.child('participantIDs').child(auth.uid).exists()))",
+
         // Typing indicators
         // Structure: /conversations/{conversationId}/typing/{userId}
         "typing": {

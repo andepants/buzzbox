@@ -2,9 +2,32 @@
 
 **Phase:** Day 2-3 (Extended Messaging)
 **Priority:** P1 (High - Core Feature)
-**Estimated Time:** 4-5 hours
+**Original Estimate:** 4-5 hours | **Revised Estimate:** 2.5 hours (MVP), 5 hours (Full)
 **Epic Owner:** Development Team Lead
 **Dependencies:** Epic 2 (One-on-One Chat), Epic 3 (Group Chat)
+
+---
+
+## 📋 Document Audit Notice
+
+**Audit Date:** 2025-10-22
+**Auditor:** Product Owner (Sarah)
+**Status:** Updated to reflect current implementation state
+
+**Key Changes:**
+- ✅ Added "Current Implementation Status" section (line 32)
+- ✅ Updated all stories with implementation notes (✅ Done, 🟡 Partial, ❌ Not Started)
+- ✅ Revised time estimates based on completed work (35% done)
+- ✅ Added MVP vs Full scope recommendations
+- ✅ Documented existing AttachmentEntity and StorageService implementations
+- ✅ Marked completed technical tasks throughout
+- ✅ Added strategic recommendations for Stories 4.5-4.6 (defer to Phase 2)
+
+**Next Actions:**
+1. Review and approve MVP scope (Stories 4.1-4.4 only)
+2. Confirm video/file sharing can be deferred
+3. Decide: CachedAsyncImage wrapper vs direct KFImage usage
+4. Allocate 2.5 hours for MVP completion
 
 ---
 
@@ -26,6 +49,100 @@ Enable users to share images, videos, and files within conversations. Includes m
 - ✅ Download media to Photos library
 - ✅ Offline support (queue uploads, cache downloads)
 - ✅ Media compression before upload (reduce bandwidth)
+
+---
+
+## 🔧 Current Implementation Status
+
+**Last Updated:** 2025-10-22
+
+### ✅ Already Implemented (Foundation Complete)
+
+**SwiftData Models:**
+- ✅ `AttachmentEntity` - Enhanced model with upload tracking, local/remote URLs
+  - Location: `buzzbox/Core/Models/AttachmentEntity.swift`
+  - Features: `uploadStatus`, `uploadProgress`, `uploadError`, `localURL`
+  - Types: `.image`, `.video`, `.audio`, `.document`
+
+**Firebase Services:**
+- ✅ `StorageService` - Basic image upload with compression
+  - Location: `buzzbox/Core/Services/StorageService.swift`
+  - Methods: `uploadImage(_:path:)`, `uploadGroupPhoto(_:groupID:)`, `deleteImage(at:)`
+  - Compression: Auto-compress to 2048x2048, 85% quality, <500KB
+  - Validation: 5MB max file size
+
+**Image Pickers:**
+- ✅ `ImagePicker` wrapper (UIKit) - Used in ProfileView, GroupCreationView
+- ✅ `PhotosPicker` integration - Photo library access (iOS 16+)
+- ✅ Kingfisher caching configured in AppContainer
+
+**Group Photo Upload:**
+- ✅ Group photo upload with progress tracking in GroupCreationView
+- ✅ Profile picture upload in ProfileView
+
+### 🚧 Partially Implemented (Needs Integration)
+
+**Message Attachments:**
+- 🟡 `MessageEntity.attachments` relationship exists but not used in UI
+- 🟡 `AttachmentEntity` model ready but no message composer integration
+- 🟡 Upload progress tracking architecture exists but no UI
+
+**Image Caching:**
+- 🟡 Kingfisher configured but not used consistently
+- 🟡 Some views use `AsyncImage` instead of `KFImage` (no caching)
+
+### ❌ Not Yet Implemented (Remaining Work)
+
+**Story 4.1 - Image Picker Integration:**
+- ❌ CameraView wrapper for camera access
+- ❌ Attachment menu in MessageComposerView
+- ❌ Image thumbnail previews in composer
+- ❌ Send images with messages
+
+**Story 4.2 - Upload Progress:**
+- ❌ Progress callback in `uploadImage()` for real-time tracking
+- ❌ Parallel upload management (max 3 concurrent)
+- ❌ Retry button UI for failed uploads
+- ❌ Offline upload queue
+
+**Story 4.3 - Image Caching:**
+- ❌ `CachedAsyncImage` wrapper component
+- ❌ Replace all `AsyncImage` with cached version
+- ❌ Image display in MessageBubbleView
+
+**Story 4.4 - Media Viewer (CRITICAL UX):**
+- ❌ Full-screen media viewer component
+- ❌ Pinch-to-zoom gestures
+- ❌ Swipe-to-dismiss interaction
+- ❌ Share sheet integration
+- ❌ Save to Photos library
+
+**Story 4.5 - Video Sharing:**
+- ❌ Video upload with progress tracking
+- ❌ Video thumbnail generation (AVAsset)
+- ❌ VideoPlayerView for inline playback
+- ❌ 100MB file size limit enforcement
+
+**Story 4.6 - File Sharing:**
+- ❌ DocumentPicker wrapper
+- ❌ File upload support (PDF, DOC, etc.)
+- ❌ File download and viewer integration
+
+### 📊 Implementation Progress
+
+| Component | Status | Priority | Estimated Time |
+|-----------|--------|----------|----------------|
+| AttachmentEntity Model | ✅ Complete | - | - |
+| StorageService Foundation | ✅ Complete | - | - |
+| Image Pickers | ✅ Complete | - | - |
+| Message Composer Integration | ❌ Not Started | P0 | 45 min |
+| CameraView Wrapper | ❌ Not Started | P1 | 30 min |
+| Upload Progress UI | ❌ Not Started | P1 | 45 min |
+| Media Viewer | ❌ Not Started | P0 | 90 min |
+| Video Sharing | ❌ Not Started | P2 | 90 min |
+| File Sharing | ❌ Not Started | P3 | 60 min |
+
+**Overall Epic Progress:** 🟡 **~35% Complete** (Foundation + Models)
 
 ---
 
@@ -61,7 +178,11 @@ Enable users to share images, videos, and files within conversations. Includes m
 - [ ] Images display in chat thread with loading indicators
 
 **Technical Tasks:**
-1. Update MessageEntity to support attachments (already defined in SwiftData guide):
+
+> **✅ IMPLEMENTATION NOTE:** AttachmentEntity already exists at `buzzbox/Core/Models/AttachmentEntity.swift`
+> **Status:** Foundation complete, needs minor enhancements for video/image metadata
+
+1. ✅ **DONE:** MessageEntity attachment relationship exists:
    ```swift
    @Model
    final class MessageEntity {
@@ -72,15 +193,61 @@ Enable users to share images, videos, and files within conversations. Includes m
        var createdAt: Date
        var status: MessageStatus
        var syncStatus: SyncStatus
-       @Relationship(deleteRule: .cascade) var attachments: [AttachmentEntity]
+       @Relationship(deleteRule: .cascade) var attachments: [AttachmentEntity] // ✅ Already implemented
        var isSystemMessage: Bool
        var readBy: [String: Date]
-
-       // ... initializer ...
    }
    ```
 
-2. Create AttachmentPickerView:
+2. ✅ **DONE:** AttachmentEntity model (current implementation):
+   ```swift
+   @Model
+   final class AttachmentEntity {
+       @Attribute(.unique) var id: String
+       var type: AttachmentType // .image, .video, .audio, .document
+       var url: String? // Firebase Storage URL
+       var localURL: String? // Local file path
+       var thumbnailURL: String? // Thumbnail for videos/large images
+       var fileSize: Int64
+       var mimeType: String
+       var fileName: String
+       var uploadStatus: UploadStatus // .pending, .uploading, .completed, .failed
+       var uploadProgress: Double // 0.0 - 1.0
+       var uploadError: String?
+       var createdAt: Date
+
+       // 🟡 TODO: Add these properties for video/image metadata:
+       // var width: Int?
+       // var height: Int?
+       // var duration: TimeInterval? // For videos
+
+       @Relationship(deleteRule: .nullify, inverse: \MessageEntity.attachments)
+       var message: MessageEntity?
+   }
+   ```
+
+3. ⚠️ **TODO:** Enhance AttachmentEntity with metadata properties:
+   ```swift
+   // Add to AttachmentEntity.swift:
+   /// Image/video width in pixels
+   var width: Int?
+
+   /// Image/video height in pixels
+   var height: Int?
+
+   /// Video duration in seconds
+   var duration: TimeInterval?
+   ```
+
+4. ✅ **DONE:** PhotosPicker already used in ProfileView and GroupCreationView:
+   ```swift
+   // Example from ProfileView.swift
+   PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
+       // ... UI content
+   }
+   ```
+
+5. ⚠️ **TODO:** Create AttachmentPickerView for MessageComposerView:
    ```swift
    import PhotosUI
 
@@ -111,7 +278,7 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-3. Create CameraView wrapper (UIKit):
+6. ⚠️ **TODO:** Create CameraView wrapper (UIKit):
    ```swift
    import UIKit
 
@@ -156,7 +323,7 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-4. Update MessageComposerView to show attachment menu:
+7. ⚠️ **TODO:** Update MessageComposerView to show attachment menu:
    ```swift
    struct MessageComposerView: View {
        @Binding var text: String
@@ -271,7 +438,10 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-5. Request camera permission in Info.plist (already done in Epic 0)
+8. ✅ **DONE:** Camera permission in Info.plist (completed in Epic 0)
+   - `NSCameraUsageDescription`
+   - `NSPhotoLibraryUsageDescription`
+   - `NSPhotoLibraryAddUsageDescription` (for saving)
 
 **iOS Mobile Considerations:**
 - **Photo Picker (iOS 16+):**
@@ -311,17 +481,38 @@ Enable users to share images, videos, and files within conversations. Includes m
 - [ ] Images download and cache automatically in recipient's chat
 
 **Technical Tasks:**
-1. Create StorageService for Firebase Storage operations:
+
+> **✅ IMPLEMENTATION NOTE:** StorageService already exists at `buzzbox/Core/Services/StorageService.swift`
+> **Status:** Basic image upload complete, needs progress tracking and video support
+
+1. ✅ **DONE:** StorageService foundation exists with these methods:
    ```swift
-   import FirebaseStorage
-
+   // Current implementation in StorageService.swift
    final class StorageService {
-       static let shared = StorageService()
-
        private let storage = Storage.storage()
-       private let compressionQuality: CGFloat = 0.85
-       private let maxImageDimension: CGFloat = 2048
 
+       // ✅ IMPLEMENTED: Basic image upload
+       func uploadImage(_ image: UIImage, path: String) async throws -> URL {
+           // Compresses to 2048x2048, 85% quality, <500KB
+           // Returns HTTPS download URL
+       }
+
+       // ✅ IMPLEMENTED: Group photo upload
+       func uploadGroupPhoto(_ image: UIImage, groupID: String) async throws -> String {
+           // Uploads to group_photos/{groupID}/photo.jpg
+       }
+
+       // ✅ IMPLEMENTED: Delete image
+       func deleteImage(at path: String) async throws {
+           // Removes from Firebase Storage
+       }
+   }
+   ```
+
+2. ⚠️ **TODO:** Add progress tracking overload for message attachments:
+   ```swift
+   extension StorageService {
+       /// Upload image with progress tracking for message attachments
        func uploadImage(
            _ image: UIImage,
            conversationID: String,
@@ -424,7 +615,7 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-2. Update MessageThreadViewModel to handle image uploads:
+3. ⚠️ **TODO:** Update MessageThreadViewModel to handle image uploads:
    ```swift
    @MainActor
    final class MessageThreadViewModel: ObservableObject {
@@ -505,8 +696,15 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-3. Update MessageBubbleView to show upload progress
-4. Add retry button for failed uploads
+4. ⚠️ **TODO:** Update MessageBubbleView to show upload progress:
+   - Show circular progress indicator with percentage
+   - Display uploading state with `AttachmentEntity.uploadProgress`
+   - Show retry button if `uploadStatus == .failed`
+
+5. ⚠️ **TODO:** Add retry button for failed uploads:
+   - Check `AttachmentEntity.uploadError` for error message
+   - Show red "!" badge on failed attachments
+   - Tap to retry upload
 
 **iOS Mobile Considerations:**
 - **Upload Progress:**
@@ -548,7 +746,16 @@ Enable users to share images, videos, and files within conversations. Includes m
 - [ ] Failed image loads show broken image icon
 
 **Technical Tasks:**
-1. Configure Kingfisher in SortedApp.swift:
+
+> **✅ IMPLEMENTATION NOTE:** Kingfisher already configured and used in multiple views
+> **Status:** Caching works, but need consistent usage across all views
+
+1. ✅ **DONE:** Kingfisher configured in AppContainer and used in ProfileView:
+   - Cache limits already set (likely in AppContainer initialization)
+   - Kingfisher used in ProfileView for profile pictures
+   - `KFImage` provides automatic caching
+
+2. ⚠️ **TODO:** Configure explicit cache limits (if not already done):
    ```swift
    import Kingfisher
 
@@ -566,7 +773,7 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-2. Create CachedAsyncImage wrapper:
+3. ⚠️ **OPTION A - TODO:** Create CachedAsyncImage wrapper for API consistency:
    ```swift
    import Kingfisher
 
@@ -612,7 +819,22 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-3. Update MessageBubbleView to use CachedAsyncImage:
+   **OPTION B - TODO (SIMPLER):** Use `KFImage` directly everywhere:
+   ```swift
+   import Kingfisher
+
+   // Replace AsyncImage with KFImage throughout codebase
+   KFImage(url)
+       .placeholder { ProgressView() }
+       .retry(maxCount: 3, interval: .seconds(1))
+       .onSuccess { result in
+           print("Cached: \(result.cacheType)")
+       }
+       .resizable()
+       .scaledToFill()
+   ```
+
+4. ⚠️ **TODO:** Update MessageBubbleView to use cached images:
    ```swift
    struct MessageBubbleView: View {
        let message: MessageEntity
@@ -661,7 +883,11 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-4. Add Kingfisher to SPM dependencies (already done in Epic 0)
+5. ✅ **DONE:** Kingfisher added to SPM dependencies in Epic 0
+
+6. ⚠️ **ACTION REQUIRED:** Replace all `AsyncImage` with `KFImage`:
+   - EditGroupInfoView.swift line 87 (group photo)
+   - Any other views using `AsyncImage` for remote images
 
 **References:**
 - Kingfisher Documentation: https://github.com/onevcat/Kingfisher
@@ -670,6 +896,10 @@ Enable users to share images, videos, and files within conversations. Includes m
 
 ### Story 4.4: Full-Screen Media Viewer
 **As a user, I want to view images in full-screen so I can see details clearly.**
+
+> **❌ IMPLEMENTATION STATUS:** Not started - Critical UX component missing
+> **Priority:** P0 (High) - Essential for good user experience
+> **Blocking:** Story 4.1 image display in messages
 
 **Acceptance Criteria:**
 - [ ] Tap image in chat opens full-screen viewer
@@ -681,7 +911,10 @@ Enable users to share images, videos, and files within conversations. Includes m
 - [ ] Download button to save image to Photos library
 
 **Technical Tasks:**
-1. Create MediaViewerView:
+
+> **⚠️ CRITICAL:** This entire story needs implementation from scratch
+
+1. ⚠️ **TODO:** Create MediaViewerView component:
    ```swift
    struct MediaViewerView: View {
        let attachments: [AttachmentEntity]
@@ -816,9 +1049,32 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-2. Add gesture recognizers for zoom and pan
-3. Implement share sheet integration
-4. Implement save to Photos library (requires permission)
+2. ⚠️ **TODO:** Add gesture recognizers for zoom and pan:
+   - `MagnificationGesture()` for pinch-to-zoom (1x - 4x)
+   - `DragGesture()` for pan when zoomed
+   - Double-tap to toggle zoom (1x ↔ 2x)
+
+3. ⚠️ **TODO:** Implement share sheet integration:
+   ```swift
+   // Wrap UIActivityViewController in UIViewControllerRepresentable
+   struct ShareSheet: UIViewControllerRepresentable {
+       let items: [Any]
+       // ... implementation
+   }
+   ```
+
+4. ⚠️ **TODO:** Implement save to Photos library:
+   ```swift
+   import Photos
+
+   func saveToPhotos(_ image: UIImage) async throws {
+       try await PHPhotoLibrary.shared().performChanges {
+           PHAssetChangeRequest.creationRequestForAsset(from: image)
+       }
+   }
+   ```
+   - Request `NSPhotoLibraryAddUsageDescription` permission
+   - Show success/error alerts
 
 **iOS Mobile Considerations:**
 - **Pinch-to-Zoom Gestures:**
@@ -852,6 +1108,10 @@ Enable users to share images, videos, and files within conversations. Includes m
 ### Story 4.5: Video Sharing
 **As a user, I want to share videos so I can send multimedia content.**
 
+> **❌ IMPLEMENTATION STATUS:** Not started - Video upload and playback missing
+> **Priority:** P2 (Medium) - Nice-to-have for MVP, can ship with images first
+> **Dependencies:** Story 4.2 (upload infrastructure), AttachmentEntity enhancements
+
 **Acceptance Criteria:**
 - [ ] User can select videos from PHPicker
 - [ ] Videos limited to 100MB file size
@@ -861,7 +1121,13 @@ Enable users to share images, videos, and files within conversations. Includes m
 - [ ] Videos play inline with controls (play/pause, scrubber)
 
 **Technical Tasks:**
-1. Update AttachmentEntity to support videos:
+
+> **⚠️ BLOCKERS:**
+> - AttachmentEntity needs `duration` property (Story 4.1)
+> - StorageService needs video upload method
+> - VideoPlayerView component doesn't exist
+
+1. ⚠️ **TODO:** Update AttachmentEntity to support video metadata:
    ```swift
    @Model
    final class AttachmentEntity {
@@ -886,7 +1152,7 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-2. Add video upload to StorageService:
+2. ⚠️ **TODO:** Add video upload to StorageService:
    ```swift
    extension StorageService {
        func uploadVideo(
@@ -973,8 +1239,25 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-3. Create VideoPlayerView for inline playback
-4. Update MessageBubbleView to render video attachments
+3. ⚠️ **TODO:** Create VideoPlayerView for inline playback:
+   ```swift
+   import AVKit
+
+   struct VideoPlayerView: View {
+       let url: URL
+
+       var body: some View {
+           VideoPlayer(player: AVPlayer(url: url))
+               .frame(height: 300)
+               .cornerRadius(12)
+       }
+   }
+   ```
+
+4. ⚠️ **TODO:** Update MessageBubbleView to render video attachments:
+   - Show video thumbnail with play button overlay
+   - Tap to open VideoPlayerView or MediaViewerView
+   - Display duration badge (e.g., "1:23")
 
 **References:**
 - PRD Epic 4: Media Sharing (Videos)
@@ -983,6 +1266,10 @@ Enable users to share images, videos, and files within conversations. Includes m
 
 ### Story 4.6: File Sharing (PDFs, Documents)
 **As a user, I want to share files so I can send documents and PDFs.**
+
+> **❌ IMPLEMENTATION STATUS:** Not started - Lower priority feature
+> **Priority:** P3 (Low) - Consider moving to Epic 5 or Phase 2
+> **Recommendation:** Ship MVP with images first, add files later
 
 **Acceptance Criteria:**
 - [ ] User can select files via document picker
@@ -993,7 +1280,10 @@ Enable users to share images, videos, and files within conversations. Includes m
 - [ ] Download progress shown during download
 
 **Technical Tasks:**
-1. Create DocumentPicker wrapper (UIKit):
+
+> **💡 STRATEGIC NOTE:** Consider deferring this story to focus on core image/video sharing first
+
+1. ⚠️ **TODO:** Create DocumentPicker wrapper (UIKit):
    ```swift
    import UniformTypeIdentifiers
 
@@ -1035,9 +1325,43 @@ Enable users to share images, videos, and files within conversations. Includes m
    }
    ```
 
-2. Add file upload to StorageService
-3. Create FileAttachmentView component
-4. Implement file download and open in system viewer
+2. ⚠️ **TODO:** Add file upload to StorageService:
+   ```swift
+   extension StorageService {
+       func uploadFile(
+           _ fileURL: URL,
+           conversationID: String,
+           messageID: String,
+           onProgress: @escaping (Double) -> Void
+       ) async throws -> String {
+           // Similar to uploadVideo, but for documents
+           // Enforce 50MB limit
+       }
+   }
+   ```
+
+3. ⚠️ **TODO:** Create FileAttachmentView component:
+   ```swift
+   struct FileAttachmentView: View {
+       let attachment: AttachmentEntity
+
+       var body: some View {
+           HStack {
+               Image(systemName: fileIcon(for: attachment.mimeType))
+               VStack(alignment: .leading) {
+                   Text(attachment.fileName)
+                   Text(formatFileSize(attachment.fileSize))
+                       .font(.caption)
+               }
+           }
+       }
+   }
+   ```
+
+4. ⚠️ **TODO:** Implement file download and open in system viewer:
+   - Download file to temp directory
+   - Use `UIDocumentInteractionController` to open
+   - Show download progress
 
 **References:**
 - Architecture Doc Section 8.2 (File Sharing)
@@ -1046,13 +1370,27 @@ Enable users to share images, videos, and files within conversations. Includes m
 
 ## Dependencies & Prerequisites
 
-### Required Epics:
+### ✅ Already Complete:
 - [x] Epic 0: Project Scaffolding (Firebase Storage configured)
-- [x] Epic 2: One-on-One Chat (Message infrastructure)
+- [x] Epic 2: One-on-One Chat (MessageEntity with attachments relationship)
+- [x] AttachmentEntity model created with upload tracking
+- [x] StorageService basic implementation (image upload, compression)
+- [x] Kingfisher 7.10+ (image caching) - SPM dependency added
+- [x] Firebase Storage SDK - Configured and working
+- [x] ImagePicker and PhotosPicker components
+- [x] Info.plist permissions (Camera, Photo Library)
 
-### Required Packages:
-- [x] Kingfisher 7.10+ (image caching)
-- [x] Firebase Storage SDK
+### 🚧 Ready to Integrate (Models Exist, Need UI):
+- MessageComposerView attachment support
+- MessageBubbleView attachment display
+- Upload progress UI
+- Image caching in message views
+
+### ⚠️ Not Yet Implemented:
+- CameraView wrapper
+- MediaViewerView (full-screen viewer)
+- Video upload and playback
+- File/document sharing
 
 ---
 
@@ -1071,28 +1409,58 @@ Enable users to share images, videos, and files within conversations. Includes m
 
 ## Success Criteria
 
-**Epic 4 is complete when:**
+### MVP Success Criteria (Image Sharing Only):
+**Epic 4 MVP is complete when:**
 - ✅ Users can share images from photos and camera
 - ✅ Images upload with progress indicators
-- ✅ Images cached with Kingfisher
-- ✅ Full-screen media viewer works
-- ✅ Videos upload with thumbnails
-- ✅ Files upload and download
-- ✅ Offline uploads queue and sync
+- ✅ Images cached with Kingfisher (no redundant downloads)
+- ✅ Full-screen media viewer with zoom/pan/share works
+- ✅ Images display correctly in message threads
+- ✅ Upload failures show retry button
+
+### Full Epic Success Criteria (Complete):
+**Epic 4 is fully complete when:**
+- ✅ All MVP criteria met
+- ✅ Videos upload with thumbnail generation
+- ✅ Videos play inline with controls
+- ✅ Files (PDF, DOC) upload and download
+- ✅ Offline upload queue and sync
+- ✅ Save to Photos library works
+
+### Current Status:
+- 🟡 **Foundation Complete** (~35%): Models, services, pickers exist
+- 🟡 **MVP In Progress** (~40% remaining): Need UI integration
+- ❌ **Extended Features Not Started**: Video/file sharing
 
 ---
 
 ## Time Estimates
 
-| Story | Estimated Time |
-|-------|---------------|
-| 4.1 Image Picker and Camera | 60 mins |
-| 4.2 Firebase Storage Upload | 75 mins |
-| 4.3 Kingfisher Image Caching | 30 mins |
-| 4.4 Full-Screen Media Viewer | 60 mins |
-| 4.5 Video Sharing | 60 mins |
-| 4.6 File Sharing | 45 mins |
-| **Total** | **4-5 hours** |
+### Original Estimates vs Actual Progress
+
+| Story | Original Estimate | Already Complete | Remaining Work | Revised Estimate |
+|-------|------------------|------------------|----------------|------------------|
+| 4.1 Image Picker and Camera | 60 min | ~40% (models, pickers) | CameraView, MessageComposer integration | **35 min** |
+| 4.2 Firebase Storage Upload | 75 min | ~60% (basic upload, compression) | Progress callbacks, parallel uploads, retry UI | **30 min** |
+| 4.3 Kingfisher Image Caching | 30 min | ~70% (configured, used in some views) | CachedAsyncImage wrapper, replace AsyncImage | **15 min** |
+| 4.4 Full-Screen Media Viewer | 60 min | 0% (not started) | Entire story | **90 min** ⚠️ |
+| 4.5 Video Sharing | 60 min | 0% (not started) | Entire story | **90 min** |
+| 4.6 File Sharing | 45 min | 0% (not started) | Entire story | **60 min** |
+| **Original Total** | **4-5 hours** | **~35% done** | - | - |
+| **Remaining (MVP)** | - | - | Stories 4.1-4.4 | **2.5 hours** |
+| **Remaining (Full)** | - | - | All stories | **5 hours** |
+
+### Recommended MVP Scope (2.5 hours):
+1. ✅ Story 4.1: Complete MessageComposer integration (35 min)
+2. ✅ Story 4.2: Add progress tracking UI (30 min)
+3. ✅ Story 4.3: Standardize on KFImage (15 min)
+4. ✅ Story 4.4: Implement MediaViewerView (90 min)
+
+**MVP Result:** Users can send/receive/view images with progress tracking and full-screen viewer.
+
+### Optional Extended Scope (+2.5 hours):
+5. ⏳ Story 4.5: Video sharing (90 min)
+6. ⏳ Story 4.6: File sharing (60 min)
 
 ---
 
@@ -1116,6 +1484,48 @@ Enable users to share images, videos, and files within conversations. Includes m
 
 ---
 
-**Epic Status:** Ready for implementation
-**Blockers:** None (depends on Epic 2)
-**Risk Level:** Medium (Storage quota management)
+## 📊 Epic Status Summary
+
+**Epic Status:** 🟡 **In Progress** (~35% Foundation Complete)
+**Last Updated:** 2025-10-22
+**Blockers:** None - Ready for UI integration
+**Risk Level:** Medium (Storage quota management, video complexity)
+
+### What's Working:
+- ✅ AttachmentEntity SwiftData model with upload tracking
+- ✅ StorageService with image upload and compression
+- ✅ ImagePicker and PhotosPicker components
+- ✅ Kingfisher caching configured
+- ✅ Group photo upload working (GroupCreationView)
+- ✅ Profile picture upload working (ProfileView)
+
+### Critical Path to MVP (2.5 hours):
+1. **Story 4.1** (35 min): CameraView + MessageComposer attachment UI
+2. **Story 4.2** (30 min): Progress tracking callbacks + retry UI
+3. **Story 4.3** (15 min): Replace AsyncImage with KFImage everywhere
+4. **Story 4.4** (90 min): MediaViewerView with zoom/pan/share
+
+### Nice-to-Have (Defer to Phase 2):
+- Story 4.5: Video sharing (90 min)
+- Story 4.6: File sharing (60 min)
+
+### Key Decisions Needed:
+1. **Ship MVP with images only?** (Recommended: YES ✅)
+   - Faster time-to-market
+   - Video/files add complexity
+   - Can iterate in Phase 2
+
+2. **Use CachedAsyncImage wrapper or KFImage directly?** (Recommended: KFImage ✅)
+   - Simpler implementation
+   - Better performance
+   - Less code to maintain
+
+3. **Priority of MediaViewerView?** (Recommended: P0 - Critical for UX ✅)
+   - Essential for good image viewing experience
+   - Users expect zoom/pan in modern apps
+   - Differentiator from basic chat apps
+
+---
+
+**Epic Dependencies:** Epic 0 ✅, Epic 2 ✅
+**Sprint Recommendation:** Complete Stories 4.1-4.4 in current sprint (MVP), defer 4.5-4.6
