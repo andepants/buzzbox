@@ -14,14 +14,17 @@
     },
 
     // ============================================
-    // TYPING INDICATORS
+    // CONVERSATIONS (Metadata and ephemeral data)
     // ============================================
-    // Structure: /typing/{conversationId}/{userId}
-    "typing": {
+    "conversations": {
       "$conversationId": {
-        ".read": "auth != null",
-        "$userId": {
-          ".write": "auth != null && $userId == auth.uid"
+        // Typing indicators
+        // Structure: /conversations/{conversationId}/typing/{userId}
+        "typing": {
+          "$userId": {
+            ".read": "auth != null",
+            ".write": "auth != null && $userId == auth.uid"
+          }
         }
       }
     },
