@@ -9,6 +9,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseAuth
+import FirebaseDatabase
 
 /// Message thread view with real-time updates
 struct MessageThreadView: View {
@@ -27,6 +28,10 @@ struct MessageThreadView: View {
     @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
     @State private var recipientDisplayName: String = "Loading..."
+
+    // Typing indicator state
+    @State private var typingUserIDs: Set<String> = []
+    @State private var typingListenerHandle: DatabaseHandle?
 
     // MARK: - Initialization
 
@@ -80,6 +85,16 @@ struct MessageThreadView: View {
                             )
                             .id(message.id)
                         }
+
+                        // Typing indicator at bottom
+                        if !typingUserIDs.isEmpty {
+                            HStack {
+                                TypingIndicatorView()
+                                Spacer()
+                            }
+                            .padding(.horizontal)
+                            .transition(.opacity)
+                        }
                     }
                     .padding()
                 }
@@ -111,15 +126,43 @@ struct MessageThreadView: View {
                 }
             )
             .focused($isInputFocused)
+            .onChange(of: messageText) { oldValue, newValue in
+                handleTypingChange(newValue)
+            }
         }
         .navigationTitle(recipientDisplayName)
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            // Start typing listener
+            typingListenerHandle = TypingIndicatorService.shared.listenToTypingIndicators(
+                conversationID: conversation.id
+            ) { userIDs in
+                withAnimation {
+                    typingUserIDs = userIDs.filter { $0 != Auth.auth().currentUser?.uid }
+                }
+            }
+
             await loadRecipientName()
             await viewModel.startRealtimeListener()
             await viewModel.markAsRead()
         }
         .onDisappear {
+            // Cleanup: Stop typing
+            if let currentUserID = Auth.auth().currentUser?.uid {
+                TypingIndicatorService.shared.stopTyping(
+                    conversationID: conversation.id,
+                    userID: currentUserID
+                )
+            }
+
+            // Remove typing listener
+            if let handle = typingListenerHandle {
+                TypingIndicatorService.shared.stopListening(
+                    conversationID: conversation.id,
+                    handle: handle
+                )
+            }
+
             viewModel.stopRealtimeListener()
         }
     }
@@ -171,6 +214,26 @@ struct MessageThreadView: View {
         // Load recipient user from SwiftData or RTDB
         if let recipientUser = try? await ConversationService.shared.getUser(userID: recipientID) {
             recipientDisplayName = recipientUser.displayName
+        }
+    }
+
+    private func handleTypingChange(_ text: String) {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !trimmed.isEmpty {
+            // User is typing
+            TypingIndicatorService.shared.startTyping(
+                conversationID: conversation.id,
+                userID: currentUserID
+            )
+        } else {
+            // User cleared input
+            TypingIndicatorService.shared.stopTyping(
+                conversationID: conversation.id,
+                userID: currentUserID
+            )
         }
     }
 }
