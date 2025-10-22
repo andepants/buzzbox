@@ -33,3 +33,21 @@ Package.resolved
 # Firebase configuration (contains sensitive data)
 GoogleService-Info.plist
 **/GoogleService-Info.plist
+
+# Apple Keys & Certificates (NEVER commit these)
+*.p8
+*.p12
+*.cer
+*.certSigningRequest
+*.mobileprovision
+AuthKey_*.p8
+Keys/
+Secrets/
+keys/
+secrets/
+
+# Environment & Config Files
+.env
+.env.local
+.env.*.local
+config.local.json
