@@ -897,4 +897,138 @@ match /profile_pictures/{userId}/{allPaths=**} {
 - [ ] **Review** - Implementation complete, needs QA review
 - [ ] **Done** - Story complete and validated
 
-**Current Status:** Draft
+**Current Status:** Review
+
+---
+
+## QA Results
+
+**QA Date:** 2025-10-21
+**Reviewer:** Quinn (@qa)
+**Gate Status:** ⚠️ CONDITIONAL PASS WITH CRITICAL BLOCKERS
+
+### Overall Assessment
+
+**Quality Score:** 78/100
+
+Story 1.5 demonstrates **excellent code quality** and **strong architecture adherence**, but contains **2 critical blockers** preventing immediate deployment:
+
+1. **Build Failure (P0):** Missing `FirebaseDatabase` SPM package dependency
+2. **Missing Tests (P0):** Zero test coverage for 560 lines of new code (violates acceptance criteria)
+
+### Implementation Completeness: 87.5%
+
+**Files Created (3/3 ✅):**
+- `Core/Services/StorageService.swift` (134 lines) - Excellent
+- `Features/Settings/ViewModels/ProfileViewModel.swift` (231 lines) - Excellent
+- `Features/Settings/Views/ProfileView.swift` (195 lines) - Excellent
+
+**Files Modified (2/2 ✅):**
+- `Features/Auth/Services/AuthService.swift` - Added `updateUserProfile()` method
+- `Features/Auth/Services/DisplayNameService.swift` - Added ownership verification
+
+**Acceptance Criteria:** 14/16 PASS, 2/16 PARTIAL (87.5%)
+
+### Code Quality: A+ (95/100)
+
+**Strengths:**
+- ✅ Clean MVVM architecture with proper separation of concerns
+- ✅ Swift 6 compliance using `@Observable` macro
+- ✅ Comprehensive error handling with `LocalizedError`
+- ✅ Modern async/await concurrency throughout
+- ✅ Proper `@MainActor` annotations for UI code
+- ✅ All files under 500 lines (AI-friendly)
+- ✅ Excellent documentation with `///` doc comments
+- ✅ Dependency injection for testability
+
+**Issues:**
+- ⚠️ Unnecessary `import Kingfisher` in `AuthService.swift` (line 17)
+- ⚠️ Missing debounce implementation (should be in ViewModel, not View)
+
+### Test Coverage: ❌ FAIL (0/100)
+
+**Missing Tests:**
+- ❌ `ProfileViewModelTests.swift` - No unit tests for business logic
+- ❌ `StorageServiceTests.swift` - No tests for image upload/compression
+- ❌ Integration tests for Firebase operations
+- ❌ Display name change flow tests (release + reserve)
+- ❌ Image compression verification (< 500KB)
+
+**Story Requirement:** "Unit tests for profile update logic" - NOT IMPLEMENTED
+
+**Current Coverage:** 0% for new code (critical gap)
+
+### Critical Blockers
+
+#### 🚨 BLOCKER 1: Build Failure (Severity: CRITICAL)
+**Error:** `Unable to find module dependency: 'FirebaseDatabase'` at `AuthService.swift:15`
+**Cause:** Missing SPM package dependency
+**Impact:** Cannot build, test, or deploy
+**Resolution:** Add `FirebaseDatabase` to Xcode project dependencies
+**Priority:** P0 - Must fix before merge
+
+#### 🚨 BLOCKER 2: Missing Test Coverage (Severity: CRITICAL)
+**Issue:** 0% coverage for 560 lines of new code
+**Impact:** Violates acceptance criteria, no regression protection
+**Resolution:** Create test files with minimum 80% coverage
+**Priority:** P0 - Must fix before merge
+
+### Warnings
+
+#### ⚠️ WARNING 1: Missing Debounce (Severity: MEDIUM)
+**Issue:** Display name check fires on every keystroke (should debounce 500ms)
+**Location:** `ProfileView.swift:131-135`
+**Impact:** Excessive Firestore queries, poor UX
+**Priority:** P1 - Must fix before release
+
+#### ⚠️ WARNING 2: Unnecessary Import (Severity: MINOR)
+**Issue:** `AuthService.swift` imports `Kingfisher` but doesn't use it
+**Impact:** Increases compile time
+**Priority:** P2 - Should fix
+
+### Security Review: ✅ APPROVED
+
+- ✅ Ownership verification in `releaseDisplayName()`
+- ✅ HTTPS URL validation for download URLs
+- ✅ File size limits enforced (5MB max)
+- ✅ Authentication checks on all operations
+
+### Performance Review: ✅ APPROVED
+
+- ✅ Image compression (2048x2048, 85% quality, < 500KB target)
+- ✅ Kingfisher caching configured
+- ⚠️ Debounce missing (will cause excess queries)
+
+### Accessibility Review: ✅ APPROVED
+
+- ✅ VoiceOver labels and hints
+- ✅ Button identifiers for testing
+- ✅ Haptic feedback on success/error
+- ⚠️ Needs manual testing with VoiceOver
+
+### Required Actions Before Merge
+
+1. **Add `FirebaseDatabase` SPM package** (P0)
+2. **Create unit tests** - minimum 80% coverage (P0):
+   - ProfileViewModelTests.swift (20+ cases)
+   - StorageServiceTests.swift (15+ cases)
+3. **Implement debounce in ViewModel** using Combine (P1)
+4. **Remove `import Kingfisher`** from AuthService.swift (P2)
+5. **Verify clean build** on iOS Simulator and device (P0)
+
+### Estimated Fix Time
+
+**4-6 hours** to resolve all blockers and warnings
+
+### Final Decision
+
+**⚠️ CONDITIONAL PASS - Cannot merge until blockers resolved**
+
+Implementation quality is excellent, but critical blockers prevent deployment. Once fixed, this story will be production-ready.
+
+**Detailed QA Report:** `docs/qa/gates/story-1.5-qa-gate.md`
+
+---
+
+**QA Sign-Off:** Quinn (@qa) - 2025-10-21
+**Next Review:** After P0 blockers fixed (estimated 1 hour re-review)

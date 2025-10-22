@@ -1,0 +1,46 @@
+{
+  "rules": {
+    // ============================================
+    // MESSAGES (Real-time chat)
+    // ============================================
+    // Structure: /messages/{conversationId}/{messageId}
+    "messages": {
+      "$conversationId": {
+        ".read": "auth != null",
+        "$messageId": {
+          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid)"
+        }
+      }
+    },
+
+    // ============================================
+    // TYPING INDICATORS
+    // ============================================
+    // Structure: /typing/{conversationId}/{userId}
+    "typing": {
+      "$conversationId": {
+        ".read": "auth != null",
+        "$userId": {
+          ".write": "auth != null && $userId == auth.uid"
+        }
+      }
+    },
+
+    // ============================================
+    // USER PRESENCE
+    // ============================================
+    // Structure: /presence/{userId}
+    "presence": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && $userId == auth.uid"
+      }
+    },
+
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    ".read": false,
+    ".write": false
+  }
+}

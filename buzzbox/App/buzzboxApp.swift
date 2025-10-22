@@ -15,8 +15,17 @@ import FirebaseStorage
 
 /// Main entry point for the Buzzbox app
 /// Configured for Swift 6, iOS 17+, with SwiftData persistence
+/// [Source: Epic 1, Story 1.3 - Added RootView and scenePhase handling]
 @main
 struct buzzboxApp: App {
+    // MARK: - Properties
+
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var lastActiveDate = Date()
+    @State private var showPrivacyOverlay = false
+    @StateObject private var authViewModel = AuthViewModel()
+
+    // MARK: - Initialization
 
     init() {
         // Initialize Firebase
@@ -25,6 +34,8 @@ struct buzzboxApp: App {
         print("   Project ID: \(FirebaseApp.app()?.options.projectID ?? "unknown")")
         print("   Bundle ID: \(FirebaseApp.app()?.options.bundleID ?? "unknown")")
     }
+
+    // MARK: - SwiftData Container
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -52,10 +63,52 @@ struct buzzboxApp: App {
         }
     }()
 
+    // MARK: - Scene
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ZStack {
+                RootView()
+                    .environmentObject(authViewModel)
+
+                // Privacy overlay when app backgrounds
+                if showPrivacyOverlay {
+                    PrivacyOverlayView()
+                }
+            }
+            .modelContainer(sharedModelContainer)
+            .onChange(of: scenePhase) { _, newPhase in
+                handleScenePhaseChange(newPhase)
+            }
         }
-        .modelContainer(sharedModelContainer)
+    }
+
+    // MARK: - Lifecycle Handling
+
+    /// Handles app lifecycle transitions
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            // App became active
+            showPrivacyOverlay = false
+
+            // Refresh auth token if needed (if > 1 hour in background)
+            Task {
+                await authViewModel.refreshAuthIfNeeded(lastActiveDate: lastActiveDate)
+            }
+
+            lastActiveDate = Date()
+
+        case .inactive:
+            // App becoming inactive (e.g., system dialog shown)
+            showPrivacyOverlay = true
+
+        case .background:
+            // App moved to background
+            showPrivacyOverlay = true
+
+        @unknown default:
+            break
+        }
     }
 }

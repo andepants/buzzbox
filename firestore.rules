@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================
+    // DISPLAY NAMES COLLECTION (Public Read)
+    // ============================================
+    // This collection is INTENTIONALLY public for username availability checks
+    // ONLY stores: { userId: string, createdAt: timestamp }
+    // NO sensitive user data should be stored here
+
+    match /displayNames/{displayName} {
+      // Allow ANYONE (even unauthenticated) to read to check availability
+      allow read: if true;
+
+      // Allow authenticated users to create their own display name claim
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.keys().hasOnly(['userId', 'createdAt']);
+
+      // Prevent updates (display names are immutable once claimed)
+      allow update: if false;
+
+      // Allow users to delete ONLY their own display name claim
+      allow delete: if request.auth != null
+                    && resource.data.userId == request.auth.uid;
+    }
+
+    // ============================================
+    // USERS COLLECTION (Private)
+    // ============================================
+    // Full user profiles - PRIVATE, only accessible by the owner
+
+    match /users/{userId} {
+      // Users can only read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Users can only write their own profile
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // ============================================
+    // CONVERSATIONS & MESSAGES (Private)
+    // ============================================
+    // These will be added later - for now, deny all access
+
+    match /conversations/{conversationId} {
+      allow read, write: if false; // TODO: Add proper rules in Epic 2
+    }
+
+    match /messages/{messageId} {
+      allow read, write: if false; // TODO: Add proper rules in Epic 2
+    }
+
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    // Explicitly deny access to any other collections
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

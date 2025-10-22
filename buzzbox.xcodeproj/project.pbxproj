@@ -14,7 +14,6 @@
 		65DFADD42EA8657800B68AF2 /* FirebaseAnalytics in Frameworks */ = {isa = PBXBuildFile; productRef = 65DFADC72EA8650600B68AF2 /* FirebaseAnalytics */; };
 		65DFADD52EA8657800B68AF2 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 65DFADC82EA8650700B68AF2 /* FirebaseCrashlytics */; };
 		65DFADD62EA8657800B68AF2 /* Kingfisher in Frameworks */ = {isa = PBXBuildFile; productRef = 65DFADC92EA8650800B68AF2 /* Kingfisher */; };
-		65DFAE692EA86B7500B68AF2 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 65DFAE682EA86B7500B68AF2 /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -140,7 +139,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				65DFAE692EA86B7500B68AF2 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,6 +283,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = buzzbox/buzzbox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H8R6C22KR8;
@@ -320,6 +319,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = buzzbox/buzzbox.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = H8R6C22KR8;
