@@ -54,7 +54,7 @@ struct buzzboxApp: App {
                         // ✅ Set user online when app launches
                         // [Source: Story 2.8 - User Presence & Online Status]
                         Task { @MainActor in
-                            UserPresenceService.shared.setOnline()
+                            await UserPresenceService.shared.setOnline()
                         }
                     }
 

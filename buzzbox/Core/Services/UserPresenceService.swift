@@ -47,37 +47,45 @@ final class UserPresenceService {
     // MARK: - Set Presence
 
     /// Set user as online with auto-cleanup on disconnect
-    func setOnline() {
+    func setOnline() async {
         guard let userID = Auth.auth().currentUser?.uid else { return }
 
         let presenceRef = database.child("userPresence/\(userID)")
 
-        // Set online status
-        presenceRef.child("online").setValue(true)
-        presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
+        do {
+            // Set online status
+            try await presenceRef.child("online").setValue(true)
+            try await presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
 
-        // ✅ CRITICAL: Auto-cleanup on disconnect (app crash, force quit, network drop)
-        presenceRef.child("online").onDisconnectRemoveValue()
-        presenceRef.child("lastSeen").onDisconnectSetValue(ServerValue.timestamp())
+            // ✅ CRITICAL: Auto-cleanup on disconnect (app crash, force quit, network drop)
+            try await presenceRef.child("online").onDisconnectRemoveValue()
+            try await presenceRef.child("lastSeen").onDisconnectSetValue(ServerValue.timestamp())
 
-        print("✅ User presence: ONLINE")
+            print("✅ User presence: ONLINE")
+        } catch {
+            print("❌ Failed to set online presence: \(error.localizedDescription)")
+        }
     }
 
     /// Set user as offline and cancel disconnect operations
-    func setOffline() {
+    func setOffline() async {
         guard let userID = Auth.auth().currentUser?.uid else { return }
 
         let presenceRef = database.child("userPresence/\(userID)")
 
-        // Set offline status
-        presenceRef.child("online").setValue(false)
-        presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
+        do {
+            // Cancel pending onDisconnect operations
+            try await presenceRef.child("online").cancelDisconnectOperations()
+            try await presenceRef.child("lastSeen").cancelDisconnectOperations()
 
-        // Cancel pending onDisconnect operations
-        presenceRef.child("online").cancelDisconnectOperations()
-        presenceRef.child("lastSeen").cancelDisconnectOperations()
+            // Set offline status
+            try await presenceRef.child("online").setValue(false)
+            try await presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
 
-        print("⚫ User presence: OFFLINE")
+            print("✅ User presence: OFFLINE")
+        } catch {
+            print("❌ Failed to set offline presence: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - App Lifecycle
@@ -91,7 +99,7 @@ final class UserPresenceService {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.setOnline()
+                await self?.setOnline()
             }
         }
 
@@ -102,7 +110,7 @@ final class UserPresenceService {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.setOffline()
+                await self?.setOffline()
             }
         }
 
@@ -113,7 +121,7 @@ final class UserPresenceService {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                self?.setOffline()
+                await self?.setOffline()
             }
         }
     }

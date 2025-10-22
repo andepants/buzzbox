@@ -1,6 +1,71 @@
 {
   "rules": {
-    ".read": "auth != null",
-    ".write": "auth != null"
+    // ============================================
+    // MESSAGES (Real-time chat)
+    // ============================================
+    // Structure: /messages/{conversationId}/{messageId}
+    "messages": {
+      "$conversationId": {
+        ".read": "auth != null",
+        "$messageId": {
+          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid)"
+        }
+      }
+    },
+
+    // ============================================
+    // CONVERSATIONS (Metadata and ephemeral data)
+    // ============================================
+    "conversations": {
+      "$conversationId": {
+        // Typing indicators
+        // Structure: /conversations/{conversationId}/typing/{userId}
+        "typing": {
+          "$userId": {
+            ".read": "auth != null",
+            ".write": "auth != null && $userId == auth.uid"
+          }
+        }
+      }
+    },
+
+    // ============================================
+    // USER PRESENCE (Story 2.8)
+    // ============================================
+    // Structure: /userPresence/{uid}/online, /userPresence/{uid}/lastSeen
+    "userPresence": {
+      "$uid": {
+        // Anyone authenticated can read presence status
+        ".read": "auth != null",
+
+        // Only the user can update their own presence
+        ".write": "auth != null && auth.uid == $uid",
+
+        // Validate presence data structure
+        "online": {
+          ".validate": "newData.isBoolean()"
+        },
+
+        "lastSeen": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+
+    // ============================================
+    // LEGACY PRESENCE (Keep for backward compatibility)
+    // ============================================
+    "presence": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && $userId == auth.uid"
+      }
+    },
+
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    ".read": false,
+    ".write": false
   }
 }
