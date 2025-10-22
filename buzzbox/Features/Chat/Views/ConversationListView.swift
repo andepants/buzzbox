@@ -27,6 +27,7 @@ struct ConversationListView: View {
 
     @State private var viewModel: ConversationViewModel?
     @State private var showRecipientPicker = false
+    @State private var showGroupCreation = false
     @State private var searchText = ""
     @EnvironmentObject var networkMonitor: NetworkMonitor
 
@@ -69,6 +70,10 @@ struct ConversationListView: View {
             .searchable(text: $searchText, prompt: "Search conversations")
             .navigationTitle("Messages")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    newGroupButton
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
                     newMessageButton
                 }
@@ -90,10 +95,25 @@ struct ConversationListView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showGroupCreation) {
+                GroupCreationView()
+            }
         }
     }
 
     // MARK: - Subviews
+
+    private var newGroupButton: some View {
+        Button {
+            showGroupCreation = true
+        } label: {
+            Image(systemName: "person.2.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.blue)
+        }
+        .accessibilityLabel("New Group")
+        .accessibilityHint("Create a group conversation with multiple participants")
+    }
 
     private var newMessageButton: some View {
         Button {

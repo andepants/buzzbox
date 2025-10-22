@@ -39,6 +39,33 @@ struct MessageBubbleView: View {
     // MARK: - Body
 
     var body: some View {
+        // System messages have special styling
+        if message.isSystemMessage {
+            systemMessageView
+        } else {
+            regularMessageView
+        }
+    }
+
+    // MARK: - Message Views
+
+    /// System message view (centered, gray text)
+    private var systemMessageView: some View {
+        HStack {
+            Spacer()
+            Text(message.text)
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            Spacer()
+        }
+        .accessibilityLabel("System message: \(message.text)")
+    }
+
+    /// Regular message bubble view
+    private var regularMessageView: some View {
         HStack {
             if isFromCurrentUser { Spacer(minLength: 60) }
 

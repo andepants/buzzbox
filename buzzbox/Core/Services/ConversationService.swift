@@ -24,23 +24,43 @@ final class ConversationService {
 
     // MARK: - Conversation Operations
 
-    /// Syncs a conversation to RTDB
+    /// Syncs a conversation to RTDB (supports both 1:1 and group conversations)
     /// - Parameter conversation: ConversationEntity to sync
     /// - Throws: Database errors
     nonisolated func syncConversation(_ conversation: ConversationEntity) async throws {
         let conversationRef = database.child("conversations/\(conversation.id)")
 
-        let conversationData: [String: Any] = [
-            "participantIDs": conversation.participantIDs,
+        // Convert participantIDs array to object format for RTDB security rules
+        let participantIDsDict = conversation.participantIDs.reduce(into: [String: Bool]()) {
+            $0[$1] = true
+        }
+
+        // Convert adminUserIDs array to object format
+        let adminUserIDsDict = conversation.adminUserIDs.reduce(into: [String: Bool]()) {
+            $0[$1] = true
+        }
+
+        var conversationData: [String: Any] = [
+            "participantIDs": participantIDsDict,
             "lastMessage": conversation.lastMessageText ?? "",
             "lastMessageTimestamp": ServerValue.timestamp(),
-            "createdAt": conversation.createdAt.timeIntervalSince1970,
+            "createdAt": conversation.createdAt.timeIntervalSince1970 * 1000, // Convert to milliseconds
             "updatedAt": ServerValue.timestamp(),
             "unreadCount": conversation.unreadCount
         ]
 
+        // Add group-specific fields if this is a group conversation
+        if conversation.isGroup {
+            conversationData["isGroup"] = true
+            conversationData["groupName"] = conversation.displayName ?? ""
+            conversationData["groupPhotoURL"] = conversation.groupPhotoURL ?? ""
+            conversationData["adminUserIDs"] = adminUserIDsDict
+        } else {
+            conversationData["isGroup"] = false
+        }
+
         try await conversationRef.setValue(conversationData)
-        print("✅ Conversation synced to RTDB: \(conversation.id)")
+        print("✅ Conversation synced to RTDB: \(conversation.id) (isGroup: \(conversation.isGroup))")
     }
 
     /// Finds a conversation by ID in RTDB
@@ -108,5 +128,32 @@ final class ConversationService {
         }
 
         return isBlocked
+    }
+
+    // MARK: - System Messages
+
+    /// Creates and sends a system message to RTDB
+    /// - Parameters:
+    ///   - text: System message text (e.g., "Alice created the group")
+    ///   - conversationID: Conversation ID
+    ///   - messageID: Optional message ID (generates UUID if not provided)
+    /// - Throws: Database errors
+    nonisolated func sendSystemMessage(
+        text: String,
+        conversationID: String,
+        messageID: String = UUID().uuidString
+    ) async throws {
+        let messageRef = database.child("messages/\(conversationID)/\(messageID)")
+
+        let messageData: [String: Any] = [
+            "senderID": "system",
+            "text": text,
+            "serverTimestamp": ServerValue.timestamp(),
+            "status": "sent",
+            "isSystemMessage": true
+        ]
+
+        try await messageRef.setValue(messageData)
+        print("✅ System message sent to RTDB: \(messageID)")
     }
 }

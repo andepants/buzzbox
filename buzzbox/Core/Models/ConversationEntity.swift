@@ -21,8 +21,14 @@ final class ConversationEntity {
     /// Conversation display name (for groups)
     var displayName: String?
 
-    /// Conversation avatar URL (for groups)
+    /// Conversation avatar URL (for groups) - Legacy field
     var avatarURL: String?
+
+    /// Group photo URL (Firebase Storage URL for group photos)
+    var groupPhotoURL: String?
+
+    /// Array of admin user IDs (can modify group settings)
+    var adminUserIDs: [String]
 
     /// Is this a group conversation?
     var isGroup: Bool
@@ -78,6 +84,8 @@ final class ConversationEntity {
         id: String = UUID().uuidString,
         participantIDs: [String],
         displayName: String? = nil,
+        groupPhotoURL: String? = nil,
+        adminUserIDs: [String] = [],
         isGroup: Bool = false,
         createdAt: Date = Date(),
         syncStatus: SyncStatus = .pending
@@ -85,6 +93,8 @@ final class ConversationEntity {
         self.id = id
         self.participantIDs = participantIDs
         self.displayName = displayName
+        self.groupPhotoURL = groupPhotoURL
+        self.adminUserIDs = adminUserIDs
         self.isGroup = isGroup
         self.createdAt = createdAt
         self.updatedAt = createdAt

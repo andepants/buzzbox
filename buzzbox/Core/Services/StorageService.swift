@@ -57,6 +57,18 @@ final class StorageService {
         return downloadURL
     }
 
+    /// Upload group photo to Firebase Storage
+    /// - Parameters:
+    ///   - image: UIImage to upload
+    ///   - groupID: Group conversation ID
+    /// - Returns: HTTPS download URL
+    /// - Throws: StorageError if upload fails
+    func uploadGroupPhoto(_ image: UIImage, groupID: String) async throws -> String {
+        let path = "group_photos/\(groupID)/photo.jpg"
+        let downloadURL = try await uploadImage(image, path: path)
+        return downloadURL.absoluteString
+    }
+
     /// Delete image from Firebase Storage
     /// - Parameter path: Storage path (e.g., "profile_pictures/{userId}/profile.jpg")
     /// - Throws: Firebase Storage errors

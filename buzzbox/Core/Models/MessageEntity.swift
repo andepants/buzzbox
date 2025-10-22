@@ -60,6 +60,11 @@ final class MessageEntity {
     /// Array of user IDs who have read this message
     var readBy: [String]
 
+    // MARK: - System Messages
+
+    /// Indicates if this is a system message (e.g., "Alice created the group")
+    var isSystemMessage: Bool
+
     // MARK: - AI Metadata
 
     /// AI-generated category (Fan, Business, Spam, Urgent)
@@ -110,7 +115,8 @@ final class MessageEntity {
         serverTimestamp: Date? = nil,
         sequenceNumber: Int64? = nil,
         status: MessageStatus = .sending,
-        syncStatus: SyncStatus = .pending
+        syncStatus: SyncStatus = .pending,
+        isSystemMessage: Bool = false
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -124,6 +130,7 @@ final class MessageEntity {
         self.syncStatus = syncStatus
         self.retryCount = 0
         self.readBy = []
+        self.isSystemMessage = isSystemMessage
         self.attachments = []
     }
 
