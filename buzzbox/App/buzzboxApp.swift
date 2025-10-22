@@ -50,6 +50,13 @@ struct buzzboxApp: App {
                 RootView()
                     .environmentObject(authViewModel)
                     .environmentObject(networkMonitor)
+                    .onAppear {
+                        // ✅ Set user online when app launches
+                        // [Source: Story 2.8 - User Presence & Online Status]
+                        Task { @MainActor in
+                            UserPresenceService.shared.setOnline()
+                        }
+                    }
 
                 // Privacy overlay when app backgrounds
                 if showPrivacyOverlay {

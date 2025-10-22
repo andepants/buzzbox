@@ -8,6 +8,7 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseDatabase
 
 /// Row view displaying conversation summary
 struct ConversationRowView: View {
@@ -16,13 +17,29 @@ struct ConversationRowView: View {
     let conversation: ConversationEntity
 
     @State private var recipientUser: UserEntity?
+    @State private var presenceStatus: PresenceStatus?
+    @State private var presenceHandle: DatabaseHandle?
 
     // MARK: - Body
 
     var body: some View {
         HStack(spacing: 12) {
-            // Profile picture
-            profilePicture
+            // Profile picture with online indicator
+            ZStack(alignment: .bottomTrailing) {
+                profilePicture
+
+                // ✅ Online indicator (green dot)
+                // [Source: Story 2.8 - User Presence & Online Status]
+                if presenceStatus?.isOnline == true {
+                    Circle()
+                        .fill(Color.green)
+                        .frame(width: 14, height: 14)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white, lineWidth: 2)
+                        )
+                }
+            }
 
             // Conversation details
             VStack(alignment: .leading, spacing: 4) {
@@ -49,10 +66,19 @@ struct ConversationRowView: View {
 
                 // Last message and unread badge
                 HStack(alignment: .top, spacing: 8) {
-                    Text(conversation.lastMessageText ?? "No messages yet")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                    // ✅ Show presence status or last message
+                    // [Source: Story 2.8 - User Presence & Online Status]
+                    if let status = presenceStatus, conversation.lastMessageText == nil {
+                        Text(status.displayText)
+                            .font(.system(size: 14))
+                            .foregroundStyle(status.isOnline ? .green : .secondary)
+                            .lineLimit(1)
+                    } else {
+                        Text(conversation.lastMessageText ?? "No messages yet")
+                            .font(.system(size: 15))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
 
                     Spacer()
 
@@ -64,7 +90,10 @@ struct ConversationRowView: View {
         }
         .padding(.vertical, 8)
         .task {
-            await loadRecipientUser()
+            await loadRecipientAndPresence()
+        }
+        .onDisappear {
+            stopPresenceListener()
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
@@ -141,13 +170,31 @@ struct ConversationRowView: View {
 
     // MARK: - Helper Methods
 
-    private func loadRecipientUser() async {
+    /// Load recipient user and start presence listener
+    /// [Source: Story 2.8 - User Presence & Online Status]
+    private func loadRecipientAndPresence() async {
         guard let currentUserID = Auth.auth().currentUser?.uid else { return }
         guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
             return
         }
 
         recipientUser = try? await ConversationService.shared.getUser(userID: recipientID)
+
+        // ✅ Start listening to presence
+        presenceHandle = UserPresenceService.shared.listenToPresence(userID: recipientID) { status in
+            presenceStatus = status
+        }
+    }
+
+    /// Stop listening to presence updates
+    /// [Source: Story 2.8 - User Presence & Online Status]
+    private func stopPresenceListener() {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+        guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
+            return
+        }
+
+        UserPresenceService.shared.stopListening(userID: recipientID)
     }
 }
 

@@ -33,6 +33,10 @@ struct MessageThreadView: View {
     @State private var typingUserIDs: Set<String> = []
     @State private var typingListenerHandle: DatabaseHandle?
 
+    // Presence status state
+    @State private var presenceStatus: PresenceStatus?
+    @State private var presenceHandle: DatabaseHandle?
+
     // MARK: - Initialization
 
     init(conversation: ConversationEntity) {
@@ -132,6 +136,22 @@ struct MessageThreadView: View {
         }
         .navigationTitle(recipientDisplayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                VStack(spacing: 2) {
+                    Text(recipientDisplayName)
+                        .font(.headline)
+
+                    // ✅ Presence status subtitle
+                    // [Source: Story 2.8 - User Presence & Online Status]
+                    if let status = presenceStatus, !conversation.isGroup {
+                        Text(status.displayText)
+                            .font(.caption)
+                            .foregroundStyle(status.isOnline ? .green : .secondary)
+                    }
+                }
+            }
+        }
         .task {
             // Start typing listener
             typingListenerHandle = TypingIndicatorService.shared.listenToTypingIndicators(
@@ -141,6 +161,9 @@ struct MessageThreadView: View {
                     typingUserIDs = userIDs.filter { $0 != Auth.auth().currentUser?.uid }
                 }
             }
+
+            // Start presence listener
+            await startPresenceListener()
 
             await loadRecipientName()
             await viewModel.startRealtimeListener()
@@ -162,6 +185,9 @@ struct MessageThreadView: View {
                     handle: handle
                 )
             }
+
+            // Stop presence listener
+            stopPresenceListener()
 
             viewModel.stopRealtimeListener()
         }
@@ -235,5 +261,37 @@ struct MessageThreadView: View {
                 userID: currentUserID
             )
         }
+    }
+
+    // MARK: - Presence Listener Methods
+
+    /// Start listening to recipient's presence status
+    /// [Source: Story 2.8 - User Presence & Online Status]
+    private func startPresenceListener() async {
+        guard !conversation.isGroup else {
+            // For groups, show online count instead
+            // TODO: Implement group presence in future story
+            return
+        }
+
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+        guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
+            return
+        }
+
+        presenceHandle = UserPresenceService.shared.listenToPresence(userID: recipientID) { status in
+            presenceStatus = status
+        }
+    }
+
+    /// Stop listening to presence updates
+    /// [Source: Story 2.8 - User Presence & Online Status]
+    private func stopPresenceListener() {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+        guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
+            return
+        }
+
+        UserPresenceService.shared.stopListening(userID: recipientID)
     }
 }
