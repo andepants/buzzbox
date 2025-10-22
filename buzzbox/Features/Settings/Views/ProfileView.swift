@@ -30,6 +30,11 @@ struct ProfileView: View {
                     Divider()
                         .padding(.vertical)
 
+                    accountInfoSection
+
+                    Divider()
+                        .padding(.vertical)
+
                     displayNameSection
 
                     Spacer()
@@ -74,6 +79,14 @@ struct ProfileView: View {
                         .retry(maxCount: 3, interval: .seconds(2))
                         .cacheOriginalImage()
                         .fade(duration: 0.25)
+                        .cancelOnDisappear(true)
+                        .onSuccess { result in
+                            // Force cache refresh to ensure new images display immediately
+                            print("✅ Profile image loaded successfully")
+                        }
+                        .onFailure { error in
+                            print("⚠️ Profile image failed to load: \(error)")
+                        }
                         .resizable()
                         .scaledToFill()
                         .frame(width: 120, height: 120)
@@ -111,11 +124,59 @@ struct ProfileView: View {
                 Task {
                     if let data = try? await newItem?.loadTransferable(type: Data.self),
                        let uiImage = UIImage(data: data) {
-                        await viewModel.uploadProfileImage(uiImage)
+                        await viewModel.uploadProfileImage(uiImage, modelContext: modelContext)
                     }
                 }
             }
         }
+    }
+
+    // MARK: - Account Info Section
+
+    private var accountInfoSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Account Information")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                // Username display
+                HStack {
+                    Text("Username:")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text(authViewModel.currentUser?.displayName ?? viewModel.displayName)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .fontWeight(.medium)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Username: \(authViewModel.currentUser?.displayName ?? viewModel.displayName)")
+
+                Divider()
+
+                // Email display
+                HStack {
+                    Text("Email:")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                    Spacer()
+                    Text(authViewModel.currentUser?.email ?? "")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Email: \(authViewModel.currentUser?.email ?? "")")
+            }
+            .padding()
+            .background(Color(.systemGray6))
+            .cornerRadius(10)
+        }
+        .padding(.horizontal)
     }
 
     // MARK: - Display Name Section

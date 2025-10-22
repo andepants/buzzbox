@@ -8,6 +8,7 @@
 
 import Foundation
 @preconcurrency import FirebaseDatabase
+@preconcurrency import FirebaseFirestore
 import SwiftData
 
 /// Service for managing conversations in Firebase Realtime Database
@@ -90,21 +91,21 @@ final class ConversationService {
         )
     }
 
-    /// Gets a user by ID from RTDB
+    /// Gets a user by ID from Firestore
     /// - Parameter userID: User ID
     /// - Returns: UserEntity if found, nil otherwise
     /// - Throws: Database errors
     nonisolated func getUser(userID: String) async throws -> UserEntity? {
-        let userRef = database.child("users/\(userID)")
-        let snapshot = try await userRef.getData()
+        let userRef = Firestore.firestore().collection("users").document(userID)
+        let snapshot = try await userRef.getDocument()
 
-        guard snapshot.exists(),
-              let userData = snapshot.value as? [String: Any] else {
-            print("⚠️ User not found in RTDB: \(userID)")
+        guard snapshot.exists,
+              let userData = snapshot.data() else {
+            print("⚠️ User not found in Firestore: \(userID)")
             return nil
         }
 
-        print("✅ User found in RTDB: \(userID)")
+        print("✅ User found in Firestore: \(userID)")
 
         return UserEntity(
             id: userID,

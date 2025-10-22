@@ -10,6 +10,7 @@ import SwiftUI
 import SwiftData
 import Combine
 import FirebaseAuth
+import Kingfisher
 
 /// Profile management view model
 @MainActor
@@ -149,9 +150,11 @@ final class ProfileViewModel {
 
     // MARK: - Image Upload
 
-    /// Upload profile image to Firebase Storage
-    /// - Parameter image: UIImage to upload
-    func uploadProfileImage(_ image: UIImage) async {
+    /// Upload profile image to Firebase Storage and automatically save to user profile
+    /// - Parameters:
+    ///   - image: UIImage to upload
+    ///   - modelContext: SwiftData ModelContext for local persistence
+    func uploadProfileImage(_ image: UIImage, modelContext: ModelContext) async {
         isUploading = true
         defer { isUploading = false }
 
@@ -160,15 +163,40 @@ final class ProfileViewModel {
                 throw StorageError.invalidDownloadURL
             }
 
+            // Clear Kingfisher cache for old photo URL to prevent concurrent fetch issues
+            if let oldPhotoURL = photoURL {
+                ImageCache.default.removeImage(forKey: oldPhotoURL.absoluteString)
+                ImageDownloader.default.cancel(url: oldPhotoURL)
+            }
+
             let path = "profile_pictures/\(userId)/profile.jpg"
 
+            // Upload to Firebase Storage
             let downloadURL = try await storageService.uploadImage(image, path: path)
+
+            // Force Kingfisher to recognize this as a new image by clearing any existing cache
+            ImageCache.default.removeImage(forKey: downloadURL.absoluteString)
+
+            // Update local state
             photoURL = downloadURL
-            hasChanges = true
+
+            // Automatically save to user profile (Firestore, RTDB, and local SwiftData)
+            // This makes the profile picture immediately available to all users
+            try await authService.updateUserProfile(
+                displayName: nil, // Don't change displayName
+                photoURL: downloadURL,
+                modelContext: modelContext
+            )
+
+            // Update original photoURL to reflect saved state
+            originalPhotoURL = downloadURL
+            hasChanges = (displayName != originalDisplayName)
 
             // Success haptic feedback
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
+
+            print("✅ [PROFILE] Profile picture uploaded and saved successfully")
         } catch {
             errorMessage = error.localizedDescription
             showError = true
@@ -176,6 +204,8 @@ final class ProfileViewModel {
             // Error haptic feedback
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.error)
+
+            print("⚠️ [PROFILE] Profile picture upload failed: \(error)")
         }
     }
 
