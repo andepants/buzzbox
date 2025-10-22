@@ -146,4 +146,36 @@ final class TypingIndicatorService {
             .child("conversations/\(conversationID)/typing")
             .removeObserver(withHandle: handle)
     }
+
+    // MARK: - Group Typing Formatting
+
+    /// Format typing text for multiple users in group conversations
+    /// [Source: Story 3.5 - Group Typing Indicators, lines 125-145]
+    /// - Parameters:
+    ///   - userIDs: Set of user IDs currently typing
+    ///   - participants: Array of UserEntity participants to resolve display names
+    /// - Returns: Formatted typing text string
+    /// - Note: Formats as follows:
+    ///   - 0 typers: "" (empty)
+    ///   - 1 typer: "Alice is typing..."
+    ///   - 2 typers: "Alice and Bob are typing..."
+    ///   - 3 typers: "Alice, Bob, and Charlie are typing..."
+    ///   - 4+ typers: "Alice, Bob, and 2 others are typing..."
+    func formatTypingText(userIDs: Set<String>, participants: [UserEntity]) -> String {
+        let typingUsers = participants.filter { userIDs.contains($0.id) }
+
+        switch typingUsers.count {
+        case 0:
+            return ""
+        case 1:
+            return "\(typingUsers[0].displayName) is typing..."
+        case 2:
+            return "\(typingUsers[0].displayName) and \(typingUsers[1].displayName) are typing..."
+        case 3:
+            return "\(typingUsers[0].displayName), \(typingUsers[1].displayName), and \(typingUsers[2].displayName) are typing..."
+        default:
+            let others = typingUsers.count - 2
+            return "\(typingUsers[0].displayName), \(typingUsers[1].displayName), and \(others) others are typing..."
+        }
+    }
 }

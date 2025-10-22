@@ -32,6 +32,7 @@ struct MessageThreadView: View {
     // Typing indicator state
     @State private var typingUserIDs: Set<String> = []
     @State private var typingListenerHandle: DatabaseHandle?
+    @State private var participants: [UserEntity] = []
 
     // Presence status state
     @State private var presenceStatus: PresenceStatus?
@@ -68,6 +69,28 @@ struct MessageThreadView: View {
         ))
     }
 
+    // MARK: - Computed Properties
+
+    /// Format typing indicator text for group conversations
+    /// [Source: Story 3.5 - Group Typing Indicators, lines 415-430]
+    private var typingText: String {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return "" }
+
+        // Filter out current user (don't show own typing)
+        let otherTypingUserIDs = typingUserIDs.filter { $0 != currentUserID }
+
+        // Filter by current participants only (exclude removed users)
+        let validTypingUserIDs = otherTypingUserIDs.filter {
+            conversation.participantIDs.contains($0)
+        }
+
+        // Format typing text using service
+        return TypingIndicatorService.shared.formatTypingText(
+            userIDs: validTypingUserIDs,
+            participants: participants
+        )
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -94,12 +117,17 @@ struct MessageThreadView: View {
                         }
 
                         // Typing indicator at bottom
-                        if !typingUserIDs.isEmpty {
+                        // [Source: Story 3.5 - Group Typing Indicators, lines 437-447]
+                        if !typingText.isEmpty {
                             HStack {
-                                TypingIndicatorView()
+                                Text(typingText)
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                                    .italic()
                                 Spacer()
                             }
                             .padding(.horizontal)
+                            .padding(.top, 4)
                             .transition(.opacity)
                         }
                     }
@@ -172,6 +200,9 @@ struct MessageThreadView: View {
             }
         }
         .task {
+            // Load participants for typing indicator display
+            await loadParticipants()
+
             // Start typing listener
             typingListenerHandle = TypingIndicatorService.shared.listenToTypingIndicators(
                 conversationID: conversation.id
@@ -213,6 +244,36 @@ struct MessageThreadView: View {
     }
 
     // MARK: - Private Methods
+
+    /// Load participant entities for typing indicator display
+    /// [Source: Story 3.5 - Group Typing Indicators, lines 485-513]
+    private func loadParticipants() async {
+        let participantIDs = conversation.participantIDs
+
+        // Fetch from SwiftData cache first
+        let descriptor = FetchDescriptor<UserEntity>(
+            predicate: #Predicate<UserEntity> { user in
+                participantIDs.contains(user.id)
+            }
+        )
+
+        do {
+            participants = try modelContext.fetch(descriptor)
+
+            // Check for missing users not in SwiftData
+            let cachedUserIDs = Set(participants.map { $0.id })
+            let missingUserIDs = participantIDs.filter { !cachedUserIDs.contains($0) }
+
+            // Fetch missing users from Firestore
+            for userID in missingUserIDs {
+                if let userData = try? await ConversationService.shared.getUser(userID: userID) {
+                    participants.append(userData)
+                }
+            }
+        } catch {
+            print("⚠️ Failed to load participants: \(error.localizedDescription)")
+        }
+    }
 
     private func sendMessage() async {
         let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
