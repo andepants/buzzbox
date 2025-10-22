@@ -29,3 +29,6 @@ Build/
 # SPM
 .swiftpm/
 Package.resolved
+
+# Note: GoogleService-Info.plist is safe to commit for this project
+# It contains only client-side API keys which are meant to be public
