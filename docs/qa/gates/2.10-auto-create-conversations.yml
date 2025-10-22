@@ -1,0 +1,20 @@
+schema: 1
+story: '2.10'
+gate: CONCERNS
+status_reason: 'Push notification integration marked out of scope but listed in acceptance criteria; offline scenarios need verification.'
+reviewer: 'Quinn (QA Specialist)'
+updated: '2025-10-21T10:30:00Z'
+top_issues:
+  - id: 'REQ-001'
+    severity: medium
+    finding: 'AC 7 requires push notification triggers for conversation creation in background, but completion notes state "Push notification integration deferred (out of scope for this story)"'
+    suggested_action: 'Either remove AC 7 from story or create follow-up story for push notification integration. Update story documentation to reflect actual scope.'
+  - id: 'TEST-001'
+    severity: medium
+    finding: 'AC 4 requires offline message receipt to create conversations, but offline queue integration needs verification with actual offline testing'
+    suggested_action: 'Perform manual testing with offline scenarios or create automated test to verify offline message queuing and conversation creation on reconnect'
+  - id: 'ARCH-001'
+    severity: low
+    finding: 'Warning message printed when conversation not found in RTDB (MessageThreadViewModel.swift:250) indicates potential race condition in conversation creation flow'
+    suggested_action: 'Monitor for this warning in testing; if it occurs frequently, refactor to ensure synchronous conversation creation completes before message sending'
+waiver: { active: false }

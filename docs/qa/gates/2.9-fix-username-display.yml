@@ -1,0 +1,16 @@
+schema: 1
+story: '2.9'
+gate: CONCERNS
+status_reason: 'Real-time display name listener implemented but not actively used; missing debounce implementation.'
+reviewer: 'Quinn (QA Specialist)'
+updated: '2025-10-21T10:30:00Z'
+top_issues:
+  - id: 'REL-001'
+    severity: medium
+    finding: 'Real-time listener for display name changes (listenToDisplayName) exists in ConversationService.swift but is not actively called by ConversationViewModel'
+    suggested_action: 'Integrate listenToDisplayName() into ConversationViewModel to enable real-time display name updates when users change their profiles, or remove unused code if not needed for MVP'
+  - id: 'PERF-001'
+    severity: low
+    finding: 'Story notes mention 300ms debounce for real-time updates to prevent UI flicker, but no debouncing is implemented'
+    suggested_action: 'Add debouncing if real-time listener is integrated, or document that it is deferred to future iteration'
+waiver: { active: false }
