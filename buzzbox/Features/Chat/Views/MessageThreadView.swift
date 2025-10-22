@@ -37,6 +37,9 @@ struct MessageThreadView: View {
     @State private var presenceStatus: PresenceStatus?
     @State private var presenceHandle: DatabaseHandle?
 
+    // Group info state
+    @State private var showGroupInfo = false
+
     // MARK: - Initialization
 
     init(conversation: ConversationEntity) {
@@ -138,18 +141,34 @@ struct MessageThreadView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                VStack(spacing: 2) {
-                    Text(recipientDisplayName)
-                        .font(.headline)
+                Button {
+                    if conversation.isGroup {
+                        showGroupInfo = true
+                    }
+                } label: {
+                    VStack(spacing: 2) {
+                        Text(recipientDisplayName)
+                            .font(.headline)
 
-                    // ✅ Presence status subtitle
-                    // [Source: Story 2.8 - User Presence & Online Status]
-                    if let status = presenceStatus, !conversation.isGroup {
-                        Text(status.displayText)
-                            .font(.caption)
-                            .foregroundStyle(status.isOnline ? .green : .secondary)
+                        // ✅ Group participant count or presence status
+                        if conversation.isGroup {
+                            Text("\(conversation.participantIDs.count) participants")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else if let status = presenceStatus {
+                            // [Source: Story 2.8 - User Presence & Online Status]
+                            Text(status.displayText)
+                                .font(.caption)
+                                .foregroundStyle(status.isOnline ? .green : .secondary)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showGroupInfo) {
+            NavigationStack {
+                GroupInfoView(conversation: conversation)
             }
         }
         .task {
