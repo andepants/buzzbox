@@ -101,7 +101,7 @@ final class ConversationEntity {
     /// Update conversation with latest message
     func updateWithMessage(_ message: MessageEntity) {
         self.lastMessageText = message.text
-        self.lastMessageAt = message.createdAt
+        self.lastMessageAt = message.localCreatedAt
         self.lastMessageSenderID = message.senderID
         self.updatedAt = Date()
     }
@@ -118,7 +118,7 @@ final class ConversationEntity {
 
     /// Get sorted messages (newest first)
     var sortedMessages: [MessageEntity] {
-        messages.sorted { $0.createdAt > $1.createdAt }
+        messages.sorted { $0.localCreatedAt > $1.localCreatedAt }
     }
 
     /// Get messages pending sync

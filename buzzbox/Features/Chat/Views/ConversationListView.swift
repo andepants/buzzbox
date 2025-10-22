@@ -170,9 +170,7 @@ struct ConversationListView: View {
             }
         }
         .navigationDestination(for: ConversationEntity.self) { conversation in
-            // TODO: Navigate to MessageThreadView when Story 2.3 is complete
-            Text("Conversation: \(conversation.id)")
-                .navigationTitle("Chat")
+            MessageThreadView(conversation: conversation)
         }
     }
 

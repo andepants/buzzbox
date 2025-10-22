@@ -4,11 +4,12 @@
 id: STORY-2.2
 title: "Display Conversation List"
 epic: "Epic 2: One-on-One Chat Infrastructure"
-status: ready
+status: done
 priority: P0  # Critical - Core messaging UI
 estimate: 5  # Story points
-assigned_to: null
+assigned_to: @dev
 created_date: "2025-10-21"
+completed_date: "2025-10-22"
 sprint_day: 1  # Day 1 MVP
 
 ---
@@ -786,11 +787,13 @@ struct SortedApp: App {
 
 ## Story Lifecycle
 
-- [ ] **Draft** - Story created, needs review
+- [x] **Draft** - Story created, needs review
 - [x] **Ready** - Story reviewed and ready for development ✅
-- [ ] **In Progress** - Developer working on story
+- [x] **In Progress** - Developer working on story ✅
 - [ ] **Blocked** - Story blocked by dependency or issue
-- [ ] **Review** - Implementation complete, needs QA review
-- [ ] **Done** - Story complete and validated
+- [x] **Review** - Implementation complete, needs QA review ✅
+- [x] **Done** - Story complete and validated ✅
 
-**Current Status:** Ready
+**Current Status:** Done
+**QA Report:** docs/qa/story-2.2-qa-report.md
+**Completed:** 2025-10-22

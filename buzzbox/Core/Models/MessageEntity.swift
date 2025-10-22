@@ -24,8 +24,16 @@ final class MessageEntity {
     /// Message text content
     var text: String
 
-    /// Message creation timestamp
-    var createdAt: Date
+    // MARK: - Timestamps
+
+    /// Client timestamp for display (never nil, used for immediate UI display)
+    var localCreatedAt: Date
+
+    /// Server timestamp for authoritative ordering (set by RTDB ServerValue.timestamp())
+    var serverTimestamp: Date?
+
+    /// Server-assigned sequence number for ordering (prevents out-of-order delivery)
+    var sequenceNumber: Int64?
 
     /// Last update timestamp
     var updatedAt: Date
@@ -98,7 +106,9 @@ final class MessageEntity {
         conversationID: String,
         senderID: String,
         text: String,
-        createdAt: Date = Date(),
+        localCreatedAt: Date = Date(),
+        serverTimestamp: Date? = nil,
+        sequenceNumber: Int64? = nil,
         status: MessageStatus = .sending,
         syncStatus: SyncStatus = .pending
     ) {
@@ -106,8 +116,10 @@ final class MessageEntity {
         self.conversationID = conversationID
         self.senderID = senderID
         self.text = text
-        self.createdAt = createdAt
-        self.updatedAt = createdAt
+        self.localCreatedAt = localCreatedAt
+        self.serverTimestamp = serverTimestamp
+        self.sequenceNumber = sequenceNumber
+        self.updatedAt = localCreatedAt
         self.status = status
         self.syncStatus = syncStatus
         self.retryCount = 0
