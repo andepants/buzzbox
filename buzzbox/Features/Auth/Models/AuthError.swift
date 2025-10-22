@@ -31,7 +31,7 @@ enum AuthError: LocalizedError {
         case .invalidEmail:
             return "Please enter a valid email address"
         case .invalidPassword:
-            return "Password must be at least 8 characters"
+            return "Password must be at least 6 characters"
         case .passwordMismatch:
             return "Passwords do not match"
         case .invalidDisplayName:
@@ -41,7 +41,7 @@ enum AuthError: LocalizedError {
         case .emailAlreadyInUse:
             return "This email is already registered"
         case .weakPassword:
-            return "Password is too weak. Please use at least 8 characters"
+            return "Password is too weak. Please use at least 6 characters"
         case .networkError:
             return "Network error. Please check your connection and try again"
         case .userNotFound:

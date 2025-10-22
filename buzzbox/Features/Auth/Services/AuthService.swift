@@ -112,51 +112,63 @@ final class AuthService: ObservableObject {
             // 4. Reserve displayName in Firestore (for uniqueness)
             try await displayNameService.reserveDisplayName(displayName, userId: uid)
 
-            // 5. Create Firestore user document
+            // 5. Determine user type based on email
+            let userType: UserType = email.lowercased() == CREATOR_EMAIL.lowercased() ? .creator : .fan
+            let isPublic = userType == .creator
+
+            // 6. Create Firestore user document
             let userData: [String: Any] = [
                 "email": email,
                 "displayName": displayName,
                 "photoURL": "",
+                "userType": userType.rawValue,
+                "isPublic": isPublic,
                 "createdAt": FieldValue.serverTimestamp()
             ]
             try await firestore.collection("users").document(uid).setData(userData)
 
-            // 6. Create user profile in Realtime Database (for conversation validation)
+            // 7. Create user profile in Realtime Database (for conversation validation)
             print("🔵 [AUTH] Creating user profile in RTDB...")
             let userRef = database.child("users").child(uid)
             try await userRef.setValue([
                 "email": email,
                 "displayName": displayName,
                 "profilePictureURL": "",
+                "userType": userType.rawValue,
+                "isPublic": isPublic,
                 "createdAt": ServerValue.timestamp()
             ])
             print("✅ [AUTH] User profile created in RTDB")
 
-            // 7. Initialize user presence in Realtime Database
+            // 8. Initialize user presence in Realtime Database
             let presenceRef = database.child("userPresence").child(uid)
             try await presenceRef.setValue([
                 "status": "online",
                 "lastSeen": ServerValue.timestamp()
             ])
 
-            // 8. Create local SwiftData UserEntity
+            // 9. Create local SwiftData UserEntity
             let userEntity = UserEntity(
                 id: uid,
                 email: email,
                 displayName: displayName,
                 photoURL: nil,
-                createdAt: Date()
+                createdAt: Date(),
+                userType: userType,
+                isPublic: isPublic
             )
             modelContext.insert(userEntity)
             try modelContext.save()
 
-            // 9. Create and return User struct
+            // 10. Create and return User struct
             let user = User(
                 id: uid,
                 email: email,
                 displayName: displayName,
                 photoURL: nil,
-                createdAt: Date()
+                createdAt: Date(),
+                userType: userType,
+                isPublic: isPublic
             )
 
             // Update published state
@@ -212,11 +224,11 @@ final class AuthService: ObservableObject {
         return emailPredicate.evaluate(with: email)
     }
 
-    /// Validate password strength
+    /// Validate password strength (Firebase minimum is 6 characters)
     /// - Parameter password: Password to validate
-    /// - Returns: `true` if valid (8+ characters), `false` otherwise
+    /// - Returns: `true` if valid (6+ characters), `false` otherwise
     func isValidPassword(_ password: String) -> Bool {
-        return password.count >= 8
+        return password.count >= 6
     }
 
     // MARK: - Sign In
@@ -261,6 +273,17 @@ final class AuthService: ObservableObject {
             let photoURL = data["photoURL"] as? String
             let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
 
+            // Parse userType and isPublic (with fallback to email-based assignment)
+            let userTypeRaw = data["userType"] as? String
+            let userType: UserType
+            if let userTypeRaw = userTypeRaw, let parsedType = UserType(rawValue: userTypeRaw) {
+                userType = parsedType
+            } else {
+                // Fallback: auto-assign based on email
+                userType = userEmail.lowercased() == CREATOR_EMAIL.lowercased() ? .creator : .fan
+            }
+            let isPublic = data["isPublic"] as? Bool ?? (userType == .creator)
+
             // 5a. Sync displayName to Firebase Auth profile if it differs
             if authResult.user.displayName != displayName {
                 let changeRequest = authResult.user.createProfileChangeRequest()
@@ -283,7 +306,9 @@ final class AuthService: ObservableObject {
                 email: userEmail,
                 displayName: displayName,
                 photoURL: photoURL,
-                createdAt: createdAt
+                createdAt: createdAt,
+                userType: userType,
+                isPublic: isPublic
             )
 
             // 7. Update local SwiftData UserEntity (upsert pattern)
@@ -297,6 +322,8 @@ final class AuthService: ObservableObject {
                 existingUser.email = userEmail
                 existingUser.displayName = displayName
                 existingUser.photoURL = photoURL
+                existingUser.userType = userType
+                existingUser.isPublic = isPublic
             } else {
                 // Create new user entity
                 let userEntity = UserEntity(
@@ -304,7 +331,9 @@ final class AuthService: ObservableObject {
                     email: userEmail,
                     displayName: displayName,
                     photoURL: photoURL,
-                    createdAt: createdAt
+                    createdAt: createdAt,
+                    userType: userType,
+                    isPublic: isPublic
                 )
                 modelContext.insert(userEntity)
             }
@@ -317,6 +346,8 @@ final class AuthService: ObservableObject {
                 "email": userEmail,
                 "displayName": displayName,
                 "profilePictureURL": photoURL ?? "",
+                "userType": userType.rawValue,
+                "isPublic": isPublic,
                 "updatedAt": ServerValue.timestamp()
             ])
             print("✅ [AUTH] User profile written to RTDB")
@@ -448,6 +479,17 @@ final class AuthService: ObservableObject {
         let photoURL = data["photoURL"] as? String
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
 
+        // Parse userType and isPublic (with fallback to email-based assignment)
+        let userTypeRaw = data["userType"] as? String
+        let userType: UserType
+        if let userTypeRaw = userTypeRaw, let parsedType = UserType(rawValue: userTypeRaw) {
+            userType = parsedType
+        } else {
+            // Fallback: auto-assign based on email
+            userType = email.lowercased() == CREATOR_EMAIL.lowercased() ? .creator : .fan
+        }
+        let isPublic = data["isPublic"] as? Bool ?? (userType == .creator)
+
         // 6a. Sync displayName to Firebase Auth profile if it differs
         if firebaseUser.displayName != displayName {
             let changeRequest = firebaseUser.createProfileChangeRequest()
@@ -470,7 +512,9 @@ final class AuthService: ObservableObject {
             email: email,
             displayName: displayName,
             photoURL: photoURL,
-            createdAt: createdAt
+            createdAt: createdAt,
+            userType: userType,
+            isPublic: isPublic
         )
 
         // 8. Update local SwiftData UserEntity (upsert pattern)
@@ -484,6 +528,8 @@ final class AuthService: ObservableObject {
             existingUser.email = email
             existingUser.displayName = displayName
             existingUser.photoURL = photoURL
+            existingUser.userType = userType
+            existingUser.isPublic = isPublic
         } else {
             // Create new user entity
             let userEntity = UserEntity(
@@ -491,7 +537,9 @@ final class AuthService: ObservableObject {
                 email: email,
                 displayName: displayName,
                 photoURL: photoURL,
-                createdAt: createdAt
+                createdAt: createdAt,
+                userType: userType,
+                isPublic: isPublic
             )
             modelContext.insert(userEntity)
         }
@@ -504,6 +552,8 @@ final class AuthService: ObservableObject {
             "email": email,
             "displayName": displayName,
             "profilePictureURL": photoURL ?? "",
+            "userType": userType.rawValue,
+            "isPublic": isPublic,
             "updatedAt": ServerValue.timestamp()
         ])
         print("✅ [AUTH] User profile synced to RTDB")
@@ -715,7 +765,9 @@ final class AuthService: ObservableObject {
                 email: user.email,
                 displayName: displayName ?? user.displayName,
                 photoURL: photoURL?.absoluteString ?? user.photoURL,
-                createdAt: user.createdAt
+                createdAt: user.createdAt,
+                userType: user.userType,
+                isPublic: user.isPublic
             )
         }
     }

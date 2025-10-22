@@ -146,10 +146,18 @@ struct ProfileView: View {
                         .font(.subheadline)
                         .foregroundColor(.gray)
                     Spacer()
-                    Text(authViewModel.currentUser?.displayName ?? viewModel.displayName)
-                        .font(.subheadline)
-                        .foregroundColor(.primary)
-                        .fontWeight(.medium)
+                    HStack(spacing: 4) {
+                        Text(authViewModel.currentUser?.displayName ?? viewModel.displayName)
+                            .font(.subheadline)
+                            .foregroundColor(.primary)
+                            .fontWeight(.medium)
+
+                        // ✅ Creator badge
+                        // [Source: Story 5.2 - User Type Auto-Assignment]
+                        if authViewModel.currentUser?.isCreator == true {
+                            CreatorBadgeView(size: .small)
+                        }
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Username: \(authViewModel.currentUser?.displayName ?? viewModel.displayName)")

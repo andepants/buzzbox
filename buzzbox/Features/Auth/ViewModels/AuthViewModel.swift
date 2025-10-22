@@ -192,6 +192,7 @@ final class AuthViewModel: ObservableObject {
                 try keychainService.save(token: idToken)
 
                 // Create minimal user object (full data can be fetched later if needed)
+                // Note: userType will be auto-assigned based on email in User.init
                 currentUser = User(
                     id: firebaseUser.uid,
                     email: firebaseUser.email ?? "",
@@ -299,7 +300,7 @@ final class AuthViewModel: ObservableObject {
     /// Get password validation message
     var passwordValidationMessage: String? {
         guard !password.isEmpty else { return nil }
-        return isPasswordValid ? nil : "Password must be at least 8 characters"
+        return isPasswordValid ? nil : "Password must be at least 6 characters"
     }
 
     /// Get password match validation message

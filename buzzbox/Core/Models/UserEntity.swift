@@ -30,6 +30,34 @@ final class UserEntity {
     /// Last profile update timestamp
     var updatedAt: Date
 
+    /// User type (creator or fan) - stored as rawValue String for SwiftData
+    var userTypeRaw: String
+
+    /// Whether user profile is public
+    var isPublic: Bool
+
+    // MARK: - Computed Properties
+
+    /// User type enum computed from raw value
+    var userType: UserType {
+        get {
+            UserType(rawValue: userTypeRaw) ?? .fan
+        }
+        set {
+            userTypeRaw = newValue.rawValue
+        }
+    }
+
+    /// Check if user is the creator
+    var isCreator: Bool {
+        userType == .creator
+    }
+
+    /// Check if user is a fan
+    var isFan: Bool {
+        userType == .fan
+    }
+
     // MARK: - AI Preferences
 
     /// Enable auto-categorization
@@ -63,7 +91,9 @@ final class UserEntity {
         email: String,
         displayName: String,
         photoURL: String? = nil,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        userType: UserType = .fan,
+        isPublic: Bool = false
     ) {
         self.id = id
         self.email = email
@@ -71,6 +101,8 @@ final class UserEntity {
         self.photoURL = photoURL
         self.createdAt = createdAt
         self.updatedAt = createdAt
+        self.userTypeRaw = userType.rawValue
+        self.isPublic = isPublic
 
         // Default AI preferences (all enabled)
         self.enableCategorization = true

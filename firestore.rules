@@ -37,11 +37,21 @@ service cloud.firestore {
       // Allow authenticated users to list and read user profiles for discovery
       allow list, get: if request.auth != null;
 
-      // Users can only update/delete their own profile
-      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      // Users can only create their own profile with valid userType and isPublic
+      allow create: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.userType is string
+                    && request.resource.data.userType in ['creator', 'fan']
+                    && request.resource.data.isPublic is bool;
 
-      // Users can only create their own profile
-      allow create: if request.auth != null && request.auth.uid == userId;
+      // Users can only update their own profile, but CANNOT change userType or isPublic
+      allow update: if request.auth != null
+                    && request.auth.uid == userId
+                    && request.resource.data.userType == resource.data.userType
+                    && request.resource.data.isPublic == resource.data.isPublic;
+
+      // Users can delete their own profile
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     // ============================================

@@ -195,68 +195,60 @@ struct LoginView: View {
 
     // MARK: - Development Quick Login
 
-    /// Development-only quick login buttons for testing
+    /// Development-only dev login button for creator (Andrew)
     private var devQuickLoginButtons: some View {
         VStack(spacing: 12) {
             Divider()
                 .padding(.vertical, 8)
 
-            Text("DEV: Quick Login")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("DEV MODE")
+                .font(.caption2)
+                .fontWeight(.bold)
+                .foregroundColor(.orange)
 
-            HStack(spacing: 12) {
-                // Test User 1
-                Button(action: {
-                    viewModel.email = "alice@test.com"
-                    viewModel.password = "Test123!"
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title2)
-                        Text("Alice")
-                            .font(.caption2)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.blue.opacity(0.1))
-                    .cornerRadius(8)
+            // Creator Auto-Login Button
+            Button(action: {
+                // Auto-fill creator credentials and login
+                viewModel.email = "andrewsheim@gmail.com"
+                viewModel.password = "test1234"
+                Task {
+                    await viewModel.login(modelContext: modelContext)
                 }
-
-                // Test User 2
-                Button(action: {
-                    viewModel.email = "bob@test.com"
-                    viewModel.password = "Test123!"
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title2)
-                        Text("Bob")
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.badge.key.fill")
+                        .font(.title3)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Creator Login")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text("andrewsheim@gmail.com")
                             .font(.caption2)
+                            .opacity(0.8)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.green.opacity(0.1))
-                    .cornerRadius(8)
                 }
-
-                // Test User 3
-                Button(action: {
-                    viewModel.email = "charlie@test.com"
-                    viewModel.password = "Test123!"
-                }) {
-                    VStack(spacing: 4) {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title2)
-                        Text("Charlie")
-                            .font(.caption2)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Color.orange.opacity(0.1))
-                    .cornerRadius(8)
-                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [Color.orange.opacity(0.15), Color.red.opacity(0.15)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                )
+                .cornerRadius(10)
             }
+            .accessibilityIdentifier("devLoginButton")
+            .accessibilityLabel("Developer login as creator")
+
+            Text("Password: test1234")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .opacity(0.7)
         }
         .padding(.top, 16)
     }

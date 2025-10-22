@@ -82,7 +82,40 @@
         ".read": "auth != null",
 
         // Only the user can write their own profile
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": "auth != null && auth.uid == $uid",
+
+        // Validate required fields and types
+        ".validate": "newData.hasChildren(['email', 'displayName', 'userType', 'isPublic'])",
+
+        "email": {
+          ".validate": "newData.isString()"
+        },
+
+        "displayName": {
+          ".validate": "newData.isString()"
+        },
+
+        "profilePictureURL": {
+          ".validate": "newData.isString()"
+        },
+
+        // userType is immutable - can only be set on creation
+        "userType": {
+          ".validate": "newData.isString() && (newData.val() == 'creator' || newData.val() == 'fan') && (!data.exists() || newData.val() == data.val())"
+        },
+
+        // isPublic is immutable - can only be set on creation
+        "isPublic": {
+          ".validate": "newData.isBoolean() && (!data.exists() || newData.val() == data.val())"
+        },
+
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+
+        "updatedAt": {
+          ".validate": "newData.isNumber()"
+        }
       }
     },
 

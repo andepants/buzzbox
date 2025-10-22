@@ -129,7 +129,7 @@ struct SignUpView: View {
                     .submitLabel(.next)
                     .onSubmit { focusedField = .confirmPassword }
                     .accessibilityLabel("Password")
-                    .accessibilityHint("Minimum 8 characters")
+                    .accessibilityHint("Minimum 6 characters")
 
                 if let message = viewModel.passwordValidationMessage {
                     HStack(spacing: 4) {

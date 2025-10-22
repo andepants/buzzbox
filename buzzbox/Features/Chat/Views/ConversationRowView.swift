@@ -49,6 +49,12 @@ struct ConversationRowView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(.primary)
 
+                    // ✅ Creator badge
+                    // [Source: Story 5.2 - User Type Auto-Assignment]
+                    if recipientUser?.userType == .creator {
+                        CreatorBadgeView(size: .small)
+                    }
+
                     if conversation.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 12))
