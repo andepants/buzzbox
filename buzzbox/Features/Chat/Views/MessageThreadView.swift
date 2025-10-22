@@ -44,6 +44,9 @@ struct MessageThreadView: View {
     // Read receipt listener
     @State private var readReceiptListenerHandle: DatabaseHandle?
 
+    // Channel permission state
+    @State private var canPost: Bool = true
+
     // MARK: - Initialization
 
     init(conversation: ConversationEntity) {
@@ -157,17 +160,31 @@ struct MessageThreadView: View {
                 }
             }
 
-            // Message input composer
-            MessageComposerView(
-                text: $messageText,
-                characterLimit: 10_000,
-                onSend: {
-                    await sendMessage()
+            // Message input composer or read-only banner
+            if canPost {
+                MessageComposerView(
+                    text: $messageText,
+                    characterLimit: 10_000,
+                    onSend: {
+                        await sendMessage()
+                    }
+                )
+                .focused($isInputFocused)
+                .onChange(of: messageText) { oldValue, newValue in
+                    handleTypingChange(newValue)
                 }
-            )
-            .focused($isInputFocused)
-            .onChange(of: messageText) { oldValue, newValue in
-                handleTypingChange(newValue)
+            } else {
+                // Read-only banner for creator-only channels
+                HStack {
+                    Image(systemName: "lock.fill")
+                        .foregroundColor(.secondary)
+                    Text("Only Andrew can post here")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding()
+                .background(Color(.systemGray6))
             }
         }
         .navigationTitle(recipientDisplayName)
@@ -205,6 +222,9 @@ struct MessageThreadView: View {
             }
         }
         .task {
+            // Check creator-only posting permission
+            await checkPostingPermission()
+
             // Load participants for typing indicator display
             await loadParticipants()
 
@@ -259,6 +279,36 @@ struct MessageThreadView: View {
 
     // MARK: - Private Methods
 
+    /// Check if current user can post to this conversation (creator-only channels)
+    /// [Source: Story 5.3 - Channel System]
+    private func checkPostingPermission() async {
+        guard let currentUserID = Auth.auth().currentUser?.uid else {
+            canPost = false
+            return
+        }
+
+        let descriptor = FetchDescriptor<UserEntity>(
+            predicate: #Predicate { $0.id == currentUserID }
+        )
+
+        do {
+            let users = try modelContext.fetch(descriptor)
+            guard let currentUser = users.first else {
+                canPost = false
+                return
+            }
+
+            canPost = conversation.canUserPost(isCreator: currentUser.isCreator)
+
+            if !canPost {
+                print("🔒 User cannot post to creator-only channel: \(conversation.displayName ?? conversation.id)")
+            }
+        } catch {
+            print("⚠️ Failed to check posting permission: \(error.localizedDescription)")
+            canPost = false
+        }
+    }
+
     /// Load participant entities for typing indicator display
     /// [Source: Story 3.5 - Group Typing Indicators, lines 485-513]
     private func loadParticipants() async {
@@ -290,6 +340,32 @@ struct MessageThreadView: View {
     }
 
     private func sendMessage() async {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+
+        // Check creator-only permission
+        let descriptor = FetchDescriptor<UserEntity>(
+            predicate: #Predicate { $0.id == currentUserID }
+        )
+
+        do {
+            let users = try modelContext.fetch(descriptor)
+            guard let currentUser = users.first else { return }
+
+            // Check if user can post to this conversation
+            if !conversation.canUserPost(isCreator: currentUser.isCreator) {
+                // Show error: User cannot post to creator-only channel
+                print("⚠️ User cannot post to creator-only channel")
+                #if os(iOS)
+                let generator = UINotificationFeedbackGenerator()
+                generator.notificationOccurred(.error)
+                #endif
+                return
+            }
+        } catch {
+            print("⚠️ Failed to fetch current user: \(error.localizedDescription)")
+            return
+        }
+
         let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         // Validate message

@@ -56,8 +56,10 @@ final class ConversationService {
             conversationData["groupName"] = conversation.displayName ?? ""
             conversationData["groupPhotoURL"] = conversation.groupPhotoURL ?? ""
             conversationData["adminUserIDs"] = adminUserIDsDict
+            conversationData["isCreatorOnly"] = conversation.isCreatorOnly
         } else {
             conversationData["isGroup"] = false
+            conversationData["isCreatorOnly"] = false
         }
 
         try await conversationRef.setValue(conversationData)
@@ -129,6 +131,51 @@ final class ConversationService {
         }
 
         return isBlocked
+    }
+
+    // MARK: - Channel Operations
+
+    /// Adds a user to a channel by updating participantIDs in Firestore and RTDB
+    /// - Parameters:
+    ///   - userID: User ID to add
+    ///   - channelID: Channel ID (conversation ID)
+    /// - Throws: Database errors
+    nonisolated func addUserToChannel(userID: String, channelID: String) async throws {
+        // 1. Update Firestore conversation document
+        let firestoreRef = Firestore.firestore().collection("conversations").document(channelID)
+
+        // Add user to participantIDs array (using FieldValue.arrayUnion for atomic operation)
+        try await firestoreRef.updateData([
+            "participantIDs": FieldValue.arrayUnion([userID])
+        ])
+
+        print("✅ User \(userID) added to channel \(channelID) in Firestore")
+
+        // 2. Update RTDB conversation (convert array to object format for security rules)
+        let rtdbRef = database.child("conversations/\(channelID)/participantIDs/\(userID)")
+        try await rtdbRef.setValue(true)
+
+        print("✅ User \(userID) added to channel \(channelID) in RTDB")
+    }
+
+    /// Auto-joins user to all default channels on signup
+    /// - Parameter userID: User ID to add to channels
+    /// - Throws: Database errors
+    nonisolated func autoJoinDefaultChannels(userID: String) async throws {
+        let defaultChannelIDs = ["general", "announcements", "off-topic"]
+
+        print("🔵 Auto-joining user \(userID) to default channels...")
+
+        for channelID in defaultChannelIDs {
+            do {
+                try await addUserToChannel(userID: userID, channelID: channelID)
+            } catch {
+                // Log but don't fail - allow signup to succeed even if auto-join fails
+                print("⚠️ Failed to add user to channel \(channelID): \(error.localizedDescription)")
+            }
+        }
+
+        print("✅ User \(userID) auto-joined to default channels")
     }
 
     // MARK: - System Messages

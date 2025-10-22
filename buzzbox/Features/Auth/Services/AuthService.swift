@@ -160,7 +160,16 @@ final class AuthService: ObservableObject {
             modelContext.insert(userEntity)
             try modelContext.save()
 
-            // 10. Create and return User struct
+            // 10. Auto-join user to default channels
+            print("🔵 [AUTH] Auto-joining user to default channels...")
+            do {
+                try await ConversationService.shared.autoJoinDefaultChannels(userID: uid)
+            } catch {
+                // Log but don't fail signup - channels are non-critical
+                print("⚠️ [AUTH] Failed to auto-join channels (non-critical): \(error.localizedDescription)")
+            }
+
+            // 11. Create and return User struct
             let user = User(
                 id: uid,
                 email: email,

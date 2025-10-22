@@ -2,7 +2,7 @@
 
 **Phase:** Day 3-5 (AI Features Implementation)
 **Priority:** P0 (CRITICAL - Worth 30 Points for AI Features + 10 Points for Advanced Capability)
-**Estimated Time:** 8-9 hours
+**Estimated Time:** 8 hours
 **Epic Owner:** Product Owner
 **Dependencies:** Epic 5 (Single-Creator Platform Redesign)
 
@@ -23,7 +23,7 @@ From scoring rubric (docs/scoring.md):
 > 3. FAQ auto-responder
 > 4. Sentiment analysis
 > 5. Collaboration opportunity scoring
-
+>
 > **Advanced AI Capability (10 points)**
 > - Context-Aware Smart Replies: Learns user style accurately, generates authentic-sounding replies, provides 3+ relevant options
 
@@ -31,7 +31,7 @@ From scoring rubric (docs/scoring.md):
 
 **Problem:** Andrew has no AI assistance to manage fan communication at scale.
 
-**Solution:** Build 5 AI features + Context-Aware Smart Replies using n8n workflows.
+**Solution:** Build 5 AI features + Context-Aware Smart Replies using Firebase Cloud Functions + OpenAI.
 
 ---
 
@@ -56,60 +56,63 @@ From scoring rubric (docs/scoring.md):
 - 🆕 "Draft Reply" button for Andrew (shows 3 options)
 - 🆕 Auto-responses for FAQs
 - 🆕 Visual indicators for urgent/business messages
+- 🆕 AI settings to control auto-response behavior
 
 ---
 
 ## 🏗️ Architecture Overview
 
-### n8n-Based AI Pipeline
+### Firebase Cloud Functions + OpenAI
 
 ```
-iOS App → n8n Webhooks → OpenAI GPT-4 → Firestore → iOS App
-         ↑
-    All AI logic in n8n workflows
+iOS App → Firebase RTDB → Cloud Functions → OpenAI GPT-4 → RTDB → iOS App
+                         ↑
+                    Auto-triggered on new messages
 ```
 
-**Why n8n Instead of Cloud Functions:**
-- ✅ Visual workflow builder (easier to debug/modify)
-- ✅ All AI logic in one place
-- ✅ No Cloud Functions deployment needed
-- ✅ Developer preference and familiarity
+**Why Cloud Functions Instead of n8n:**
+- ✅ Zero cost on Firebase free tier
+- ✅ Auto-triggered by RTDB (no webhooks needed)
+- ✅ Co-located with Firebase (<1s latency)
+- ✅ TypeScript (version controlled, better IDE support)
+- ✅ Firebase Emulator Suite for local testing
+- ✅ Single stack (no third-party dependencies)
 
 **Trade-offs:**
-- ⚠️ Adds 200-500ms latency (extra network hop)
-- ⚠️ Requires n8n hosting (n8n Cloud or self-hosted)
-- ⚠️ Slight deviation from tech stack (acceptable for this use case)
+- ⚠️ Requires Cloud Functions deployment (simple: `firebase deploy --only functions`)
+- ⚠️ TypeScript/Node.js knowledge needed (vs visual workflow builder)
 
 ---
 
 ## 📊 High-Level Implementation Overview
 
-### 1. n8n Workflows (3 workflows)
+### 1. Firebase Cloud Functions (3 functions)
 
-**Workflow 1: Auto-Processing (Features 1, 4, 5)**
-- **Trigger:** Webhook receives new message
+**Function 1: Auto-Processing (Features 1, 4, 5)**
+- **Trigger:** RTDB `onValueWritten('/messages/{conversationId}/{messageId}')`
 - **Processing:**
-  1. Categorize message (fan/business/spam/urgent)
-  2. Analyze sentiment (positive/negative/urgent/neutral)
-  3. Score opportunity (0-100 if business)
-- **Output:** `{ category, sentiment, score }`
-- **Latency:** <2s (scoring requirement)
+  1. Categorize message (fan/business/spam/urgent) - GPT-3.5
+  2. Analyze sentiment (positive/negative/urgent/neutral) - GPT-3.5
+  3. Score opportunity (0-100 if business) - GPT-4
+- **Output:** Updates message in RTDB with AI metadata
+- **Latency:** <1s (parallel processing)
+- **iOS:** No code needed - automatic!
 
-**Workflow 2: FAQ Auto-Responder (Feature 3)**
-- **Trigger:** Webhook receives message
+**Function 2: FAQ Auto-Responder (Feature 3)**
+- **Trigger:** HTTP callable function
 - **Processing:**
   1. Embed message with OpenAI embeddings
   2. Vector search Firestore FAQ collection
   3. If confidence >80% → Return FAQ answer
 - **Output:** `{ isFAQ: true, answer: "..." }` or `{ isFAQ: false }`
 - **Latency:** <2s
-- **Auto-sends:** If FAQ match, iOS automatically sends response
+- **iOS:** Calls function, auto-sends if FAQ match
 
-**Workflow 3: Context-Aware Smart Replies (Features 2 + Advanced)**
-- **Trigger:** User taps "Draft Reply" button
+**Function 3: Context-Aware Smart Replies (Features 2 + Advanced)**
+- **Trigger:** HTTP callable function
 - **Processing:**
-  1. Fetch last 20 messages from Firestore (conversation context)
-  2. Fetch Andrew's writing style examples from Firestore
+  1. Fetch last 20 messages from RTDB (conversation context)
+  2. Fetch Andrew's writing style from Firestore
   3. Call OpenAI GPT-4 with:
      - System prompt: Andrew's personality/tone
      - Context: Recent conversation history
@@ -121,19 +124,20 @@ iOS App → n8n Webhooks → OpenAI GPT-4 → Firestore → iOS App
 ### 2. iOS Integration
 
 **New Service: `AIService.swift`**
-- `processMessage()` → Calls Workflow 1, updates message metadata
-- `checkFAQ()` → Calls Workflow 2, auto-responds if match
-- `generateSmartReplies()` → Calls Workflow 3, displays 3 options
+- `checkFAQ()` → Calls Cloud Function 2, auto-responds if match
+- `generateSmartReplies()` → Calls Cloud Function 3, displays 3 options
+- Note: Auto-processing happens automatically via Cloud Function 1
 
 **UI Updates:**
 - AI badges on messages (category, sentiment, score)
 - "Draft Reply" button in message composer
 - Smart reply selection UI (3 options)
 - Auto-response indicator for FAQ answers
+- Settings toggle for FAQ auto-response
 
 ### 3. Firestore Data Structures
 
-**FAQ Collection:**
+**FAQ Collection (Manual Management):**
 ```json
 {
   "faqs": {
@@ -153,7 +157,8 @@ iOS App → n8n Webhooks → OpenAI GPT-4 → Firestore → iOS App
   "creator_profiles": {
     "andrew": {
       "writing_style": {
-        "tone": "friendly, casual, authentic",
+        "personality": "Friendly tech content creator...",
+        "tone": "warm, encouraging, uses emojis occasionally",
         "examples": [
           "Hey! Thanks for reaching out...",
           "That's awesome! I'd love to...",
@@ -170,195 +175,570 @@ iOS App → n8n Webhooks → OpenAI GPT-4 → Firestore → iOS App
 
 ## 📝 User Stories
 
-### Story 6.1: n8n Setup & Configuration (30 min)
+### Story 6.1: Firebase Cloud Functions Setup (45 min)
 
-**As a developer, I want to set up n8n infrastructure so I can deploy AI workflows.**
+**As a developer, I want to set up Firebase Cloud Functions so I can deploy AI workflows.**
 
 **Acceptance Criteria:**
-- [ ] n8n instance deployed (n8n Cloud or self-hosted)
-- [ ] OpenAI API key configured in n8n credentials
-- [ ] Firestore service account configured for n8n
-- [ ] Test webhook working (hello world)
-- [ ] Environment variables secured
+- [ ] Firebase Functions initialized in project (`functions/` directory)
+- [ ] OpenAI SDK installed (`npm install openai`)
+- [ ] Firebase Admin SDK configured
+- [ ] Environment variables configured (OpenAI API key)
+- [ ] Test function deployed and working
+- [ ] Firebase Emulator Suite set up for local testing
 
 **Technical Details:**
-- Use n8n Cloud (easiest) or Docker self-hosted
-- Store API keys in n8n credentials (never in code)
-- Configure CORS for iOS app domain
 
-**Estimate:** 30 min
+```bash
+# Initialize Firebase Functions
+cd /Users/andre/coding/buzzbox
+firebase init functions
+# Choose TypeScript
+# Choose ESLint
+
+# Install dependencies
+cd functions
+npm install openai
+npm install @google-cloud/firestore
+
+# Set OpenAI API key
+firebase functions:config:set openai.key="sk-..."
+```
+
+**Create: `functions/src/index.ts`**
+```typescript
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import OpenAI from 'openai';
+
+admin.initializeApp();
+
+const openai = new OpenAI({
+  apiKey: functions.config().openai.key,
+});
+
+// Test function
+export const helloWorld = functions.https.onRequest((request, response) => {
+  response.json({ message: "Firebase Functions + OpenAI ready!" });
+});
+```
+
+**Deploy:**
+```bash
+firebase deploy --only functions
+```
+
+**Test:**
+```bash
+# Local emulator
+firebase emulators:start --only functions
+curl http://localhost:5001/[PROJECT-ID]/us-central1/helloWorld
+```
+
+**Estimate:** 45 min
 
 ---
 
-### Story 6.2: Auto-Processing Workflow (Feature 1, 4, 5) (1.5 hours)
+### Story 6.2: Auto-Processing Cloud Function (Features 1, 4, 5) (2 hours)
 
 **As Andrew, I want every fan DM automatically categorized and analyzed so I can prioritize my responses.**
 
-**n8n Workflow Design:**
+**Cloud Function Design:**
 
-**Nodes:**
-1. **Webhook Trigger** (receives `{ messageText, messageId, senderId }`)
-2. **OpenAI Chat Node 1 - Categorization**
-   - Model: `gpt-3.5-turbo`
-   - Prompt:
-   ```
-   Categorize this message into one category: fan, business, spam, urgent
+**Create: `functions/src/ai-processing.ts`**
 
-   Message: {{messageText}}
+```typescript
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import OpenAI from 'openai';
 
-   Respond with only one word: fan, business, spam, or urgent
-   ```
-3. **OpenAI Chat Node 2 - Sentiment Analysis**
-   - Model: `gpt-3.5-turbo`
-   - Prompt:
-   ```
-   Analyze the sentiment of this message. Choose one: positive, negative, urgent, neutral
+const openai = new OpenAI({
+  apiKey: functions.config().openai.key,
+});
 
-   Message: {{messageText}}
+interface Message {
+  id: string;
+  text: string;
+  senderId: string;
+  receiverId: string;
+  timestamp: number;
+}
 
-   Respond with only one word.
-   ```
-4. **IF Node** (check if category == "business")
-5. **OpenAI Chat Node 3 - Opportunity Scoring** (only if business)
-   - Model: `gpt-4`
-   - Prompt:
-   ```
-   Score this business collaboration opportunity from 0-100 based on:
-   - Monetary value potential
-   - Brand fit for a tech content creator
-   - Legitimacy (not spam)
-   - Urgency
+/**
+ * Auto-triggered on new messages to process with AI
+ * Features: Categorization (1), Sentiment (4), Opportunity Scoring (5)
+ */
+export const processMessageAI = functions.database
+  .ref('/messages/{conversationId}/{messageId}')
+  .onWrite(async (change, context) => {
+    // Only process new messages (not updates)
+    if (!change.after.exists()) {
+      return null; // Message deleted
+    }
 
-   Message: {{messageText}}
+    const message = change.after.val() as Message;
 
-   Respond with only a number 0-100 and brief reasoning.
-   ```
-6. **Firestore Node** (update message document with AI metadata)
-7. **Webhook Response** (return `{ category, sentiment, score }`)
+    // Only process messages sent to the creator (Andrew)
+    const CREATOR_ID = 'andrew_creator_id'; // From Firebase Auth
+    if (message.receiverId !== CREATOR_ID) {
+      return null;
+    }
+
+    // Skip if already processed
+    if (change.after.child('aiCategory').exists()) {
+      return null;
+    }
+
+    try {
+      // Parallel AI processing for speed
+      const [category, sentiment, score] = await Promise.all([
+        categorizeMessage(message.text),
+        analyzeSentiment(message.text),
+        scoreOpportunity(message.text), // Will return null if not business
+      ]);
+
+      // Update message with AI metadata
+      await change.after.ref.update({
+        aiCategory: category,
+        aiSentiment: sentiment,
+        aiOpportunityScore: score,
+        aiProcessedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      functions.logger.info(`Processed message ${message.id}:`, {
+        category,
+        sentiment,
+        score,
+      });
+
+      return { success: true };
+    } catch (error) {
+      functions.logger.error('AI processing failed:', error);
+      // Don't throw - message should still work without AI metadata
+      return { success: false, error };
+    }
+  });
+
+/**
+ * Categorize message using GPT-3.5
+ */
+async function categorizeMessage(text: string): Promise<string> {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [
+      {
+        role: 'system',
+        content: 'Categorize this message into ONE category: fan, business, spam, or urgent. Respond with only the category word.',
+      },
+      {
+        role: 'user',
+        content: text,
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 10,
+  });
+
+  const category = completion.choices[0].message.content?.trim().toLowerCase() || 'fan';
+
+  // Validate category
+  if (!['fan', 'business', 'spam', 'urgent'].includes(category)) {
+    return 'fan'; // Default fallback
+  }
+
+  return category;
+}
+
+/**
+ * Analyze sentiment using GPT-3.5
+ */
+async function analyzeSentiment(text: string): Promise<string> {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-3.5-turbo',
+    messages: [
+      {
+        role: 'system',
+        content: 'Analyze the sentiment of this message. Choose ONE: positive, negative, urgent, or neutral. Respond with only the sentiment word.',
+      },
+      {
+        role: 'user',
+        content: text,
+      },
+    ],
+    temperature: 0.3,
+    max_tokens: 10,
+  });
+
+  const sentiment = completion.choices[0].message.content?.trim().toLowerCase() || 'neutral';
+
+  // Validate sentiment
+  if (!['positive', 'negative', 'urgent', 'neutral'].includes(sentiment)) {
+    return 'neutral';
+  }
+
+  return sentiment;
+}
+
+/**
+ * Score business opportunities using GPT-4
+ * Only called after categorization confirms it's a business message
+ */
+async function scoreOpportunity(text: string): Promise<number | null> {
+  // First do a quick categorization to see if it's business
+  const category = await categorizeMessage(text);
+
+  if (category !== 'business') {
+    return null; // Not a business message
+  }
+
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4',
+    messages: [
+      {
+        role: 'system',
+        content: `Score this business collaboration opportunity from 0-100 based on:
+- Monetary value potential
+- Brand fit for a tech content creator
+- Legitimacy (not spam)
+- Urgency
+
+Respond with only a number from 0-100.`,
+      },
+      {
+        role: 'user',
+        content: text,
+      },
+    ],
+    temperature: 0.5,
+    max_tokens: 10,
+  });
+
+  const scoreText = completion.choices[0].message.content?.trim() || '50';
+  const score = parseInt(scoreText, 10);
+
+  // Validate score
+  if (isNaN(score) || score < 0 || score > 100) {
+    return 50; // Default middle score
+  }
+
+  return score;
+}
+```
+
+**Update: `functions/src/index.ts`**
+```typescript
+export { processMessageAI } from './ai-processing';
+```
 
 **iOS Integration:**
+
+No code changes needed! Messages automatically get AI metadata when written to RTDB.
+
+**Update: `MessageBubbleView.swift`** (to display AI metadata)
 ```swift
-// In MessageThreadViewModel.swift
-func sendMessage(_ text: String) async {
-    // 1. Create message locally (optimistic UI)
-    let message = MessageEntity(...)
-    modelContext.insert(message)
+struct MessageBubbleView: View {
+    let message: MessageEntity
+    let isFromCurrentUser: Bool
 
-    // 2. Sync to Firebase RTDB
-    await realtimeDBService.sendMessage(...)
+    var body: some View {
+        VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 4) {
+            // Message bubble
+            Text(message.text)
+                .padding()
+                .background(isFromCurrentUser ? Color.blue : Color(.systemGray5))
+                .foregroundColor(isFromCurrentUser ? .white : .primary)
+                .cornerRadius(16)
 
-    // 3. Call n8n auto-processing workflow
-    Task {
-        let metadata = try await aiService.processMessage(text)
+            // AI Metadata (only show for creator viewing fan messages)
+            if !isFromCurrentUser,
+               let category = message.aiCategory {
+                AIMetadataBadgeView(
+                    category: category,
+                    sentiment: message.aiSentiment,
+                    score: message.aiOpportunityScore
+                )
+            }
 
-        // 4. Update local message with AI metadata
-        message.aiCategory = metadata.category
-        message.aiSentiment = metadata.sentiment
-        message.aiScore = metadata.score
-
-        try? modelContext.save()
+            // Timestamp
+            Text(message.timestamp.formatted(date: .omitted, time: .shortened))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: isFromCurrentUser ? .trailing : .leading)
     }
 }
 ```
 
-**UI Changes:**
-- Add AI badge component to `MessageBubbleView`
-- Show category icon (💬 Fan, 💼 Business, 🚨 Urgent, 🗑️ Spam)
-- Show sentiment color (🟢 Positive, 🔴 Negative, 🟡 Urgent)
-- Show opportunity score for business messages (💰 Score: 85/100)
-
 **Acceptance Criteria:**
-- [ ] n8n workflow deployed and accessible
-- [ ] All 3 AI features run in parallel (<2s total)
-- [ ] Message metadata saved to Firestore
+- [ ] Cloud Function deploys successfully
+- [ ] Auto-triggers on new RTDB messages
+- [ ] Categorization returns valid category (fan/business/spam/urgent)
+- [ ] Sentiment analysis returns valid sentiment (positive/negative/urgent/neutral)
+- [ ] Opportunity scoring only runs for business messages
+- [ ] All 3 AI features run in parallel (<1s total)
+- [ ] Message metadata saved to RTDB
 - [ ] iOS displays AI badges correctly
-- [ ] Works for all message types (fan, business, spam, urgent)
+- [ ] Works for all message types
+- [ ] Errors don't break message sending (graceful degradation)
 
-**Estimate:** 1.5 hours
+**Estimate:** 2 hours
 
 ---
 
-### Story 6.3: FAQ Auto-Responder (Feature 3) (1.5 hours)
+### Story 6.3: FAQ Auto-Responder Cloud Function (Feature 3) (1.5 hours)
 
 **As a fan, I want instant answers to common questions so I don't have to wait for Andrew.**
 
-**FAQ Library Setup:**
+**FAQ Library Setup (Manual):**
 
-Create 10-15 FAQs in Firestore with embeddings:
+Create 10-15 FAQs in Firestore manually via Firebase Console:
 
 ```json
 {
-  "faq_001": {
-    "question": "What time do you stream?",
-    "answer": "I stream Monday-Friday at 7pm EST on YouTube! See you there 🎮",
-    "embedding": [...],
-    "category": "schedule",
-    "variations": ["when stream", "streaming schedule", "what time"]
-  },
-  "faq_002": {
-    "question": "How can I support you?",
-    "answer": "Thanks for asking! You can support through YouTube memberships, Patreon, or just sharing my content. Every bit helps! 🙏",
-    "embedding": [...],
-    "category": "support"
+  "faqs": {
+    "faq_001": {
+      "question": "What time do you stream?",
+      "answer": "I stream Monday-Friday at 7pm EST on YouTube! See you there 🎮",
+      "embedding": null,  // Will be generated by Cloud Function
+      "category": "schedule"
+    },
+    "faq_002": {
+      "question": "How can I support you?",
+      "answer": "Thanks for asking! You can support through YouTube memberships, Patreon, or just sharing my content. Every bit helps! 🙏",
+      "embedding": null,
+      "category": "support"
+    }
   }
 }
 ```
 
-**n8n Workflow Design:**
+**Cloud Function Design:**
 
-**Nodes:**
-1. **Webhook Trigger** (receives `{ messageText, conversationId }`)
-2. **OpenAI Embeddings Node**
-   - Model: `text-embedding-3-small`
-   - Input: `{{messageText}}`
-3. **Firestore Vector Search Node**
-   - Collection: `faqs`
-   - Find nearest embedding match
-   - Return top match + similarity score
-4. **IF Node** (check if similarity > 0.80)
-5. **IF TRUE → Webhook Response** (return FAQ answer)
-6. **IF FALSE → Webhook Response** (return `{ isFAQ: false }`)
+**Create: `functions/src/faq.ts`**
+
+```typescript
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import OpenAI from 'openai';
+
+const openai = new OpenAI({
+  apiKey: functions.config().openai.key,
+});
+
+interface FAQ {
+  question: string;
+  answer: string;
+  embedding: number[];
+  category: string;
+}
+
+interface FAQResponse {
+  isFAQ: boolean;
+  answer?: string;
+  confidence?: number;
+}
+
+/**
+ * Check if message matches FAQ and return answer
+ * Feature 3: FAQ Auto-Responder
+ */
+export const checkFAQ = functions.https.onCall(async (data, context) => {
+  const { text } = data;
+
+  if (!text || typeof text !== 'string') {
+    throw new functions.https.HttpsError('invalid-argument', 'Text is required');
+  }
+
+  try {
+    // Generate embedding for user's message
+    const embeddingResponse = await openai.embeddings.create({
+      model: 'text-embedding-3-small',
+      input: text,
+    });
+
+    const messageEmbedding = embeddingResponse.data[0].embedding;
+
+    // Fetch all FAQs from Firestore
+    const faqsSnapshot = await admin.firestore()
+      .collection('faqs')
+      .get();
+
+    // Find best match using cosine similarity
+    let bestMatch: { faq: FAQ; similarity: number } | null = null;
+
+    faqsSnapshot.forEach((doc) => {
+      const faq = doc.data() as FAQ;
+
+      if (!faq.embedding || faq.embedding.length === 0) {
+        return; // Skip FAQs without embeddings
+      }
+
+      const similarity = cosineSimilarity(messageEmbedding, faq.embedding);
+
+      if (!bestMatch || similarity > bestMatch.similarity) {
+        bestMatch = { faq, similarity };
+      }
+    });
+
+    // Return FAQ if confidence > 80%
+    if (bestMatch && bestMatch.similarity > 0.80) {
+      return {
+        isFAQ: true,
+        answer: bestMatch.faq.answer,
+        confidence: bestMatch.similarity,
+      } as FAQResponse;
+    }
+
+    return {
+      isFAQ: false,
+    } as FAQResponse;
+
+  } catch (error) {
+    functions.logger.error('FAQ check failed:', error);
+    throw new functions.https.HttpsError('internal', 'FAQ check failed');
+  }
+});
+
+/**
+ * Generate embeddings for all FAQs (one-time setup function)
+ */
+export const generateFAQEmbeddings = functions.https.onRequest(async (req, res) => {
+  try {
+    const faqsSnapshot = await admin.firestore()
+      .collection('faqs')
+      .get();
+
+    const updates: Promise<any>[] = [];
+
+    for (const doc of faqsSnapshot.docs) {
+      const faq = doc.data() as FAQ;
+
+      // Generate embedding
+      const embeddingResponse = await openai.embeddings.create({
+        model: 'text-embedding-3-small',
+        input: faq.question,
+      });
+
+      const embedding = embeddingResponse.data[0].embedding;
+
+      // Update Firestore
+      updates.push(
+        doc.ref.update({ embedding })
+      );
+    }
+
+    await Promise.all(updates);
+
+    res.json({ success: true, count: faqsSnapshot.size });
+  } catch (error) {
+    functions.logger.error('Embedding generation failed:', error);
+    res.status(500).json({ error: 'Embedding generation failed' });
+  }
+});
+
+/**
+ * Calculate cosine similarity between two vectors
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) {
+    throw new Error('Vectors must have same length');
+  }
+
+  let dotProduct = 0;
+  let magnitudeA = 0;
+  let magnitudeB = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    magnitudeA += a[i] * a[i];
+    magnitudeB += b[i] * b[i];
+  }
+
+  magnitudeA = Math.sqrt(magnitudeA);
+  magnitudeB = Math.sqrt(magnitudeB);
+
+  if (magnitudeA === 0 || magnitudeB === 0) {
+    return 0;
+  }
+
+  return dotProduct / (magnitudeA * magnitudeB);
+}
+```
+
+**Update: `functions/src/index.ts`**
+```typescript
+export { checkFAQ, generateFAQEmbeddings } from './faq';
+```
+
+**One-Time Setup (Generate Embeddings):**
+```bash
+# After deploying, call this once to generate embeddings
+curl https://us-central1-[PROJECT-ID].cloudfunctions.net/generateFAQEmbeddings
+```
 
 **iOS Integration:**
+
+**Update: `AIService.swift`**
 ```swift
-// In MessageThreadViewModel.swift
+import FirebaseFunctions
+
+@MainActor
+final class AIService: ObservableObject {
+    private let functions = Functions.functions()
+
+    struct FAQResponse: Codable {
+        let isFAQ: Bool
+        let answer: String?
+        let confidence: Double?
+    }
+
+    func checkFAQ(_ text: String) async throws -> FAQResponse {
+        let result = try await functions.httpsCallable("checkFAQ")
+            .call(["text": text])
+
+        let data = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(FAQResponse.self, from: data)
+    }
+}
+```
+
+**Update: `MessageThreadViewModel.swift`**
+```swift
 func receiveMessage(_ message: MessageEntity) async {
     // 1. Display message in UI
     messages.append(message)
 
     // 2. Check if FAQ (only for fan messages to creator)
     if message.receiverId == CREATOR_ID {
-        let faqResponse = try? await aiService.checkFAQ(message.text)
+        do {
+            let faqResponse = try await aiService.checkFAQ(message.text)
 
-        if faqResponse?.isFAQ == true, let answer = faqResponse?.answer {
-            // 3. Auto-send FAQ response
-            await sendMessage(answer)
-
-            // 4. Show indicator this was AI-generated
-            message.isAIGenerated = true
+            if faqResponse.isFAQ, let answer = faqResponse.answer {
+                // 3. Auto-send FAQ response
+                await sendMessage(answer, isAIGenerated: true)
+            }
+        } catch {
+            // Silent fail - don't block on FAQ check
+            print("FAQ check failed: \(error)")
         }
     }
 }
 ```
 
-**UI Changes:**
-- Add `isAIGenerated` badge to AI-sent messages
-- Show "🤖 AI Response" label on FAQ answers
-- Optional: Allow Andrew to edit AI responses before sending
-
 **Acceptance Criteria:**
-- [ ] 10-15 FAQs created with embeddings
-- [ ] n8n workflow does vector search correctly
+- [ ] 10-15 FAQs created in Firestore manually
+- [ ] `generateFAQEmbeddings` function generates embeddings successfully
+- [ ] `checkFAQ` function does vector search correctly
 - [ ] Confidence threshold >80% for auto-response
 - [ ] iOS auto-sends FAQ answers
 - [ ] AI-generated badge shows on auto-responses
-- [ ] Andrew can disable auto-response in settings
+- [ ] FAQ check failures don't block message delivery
 
 **Estimate:** 1.5 hours
 
 ---
 
-### Story 6.4: Context-Aware Smart Reply Drafting (Feature 2 + Advanced) (2.5 hours)
+### Story 6.4: Context-Aware Smart Replies Cloud Function (Feature 2 + Advanced) (2 hours)
 
 **As Andrew, I want AI to draft replies in my voice with conversation context so I can respond faster and more authentically.**
 
@@ -366,9 +746,10 @@ func receiveMessage(_ message: MessageEntity) async {
 - Feature 2: Response drafting in creator's voice
 - Advanced AI Capability: Context-Aware Smart Replies (10 points)
 
-**Context Collection:**
+**Creator Profile Setup (Manual):**
 
-Store Andrew's writing style in Firestore:
+Create creator profile in Firestore manually via Firebase Console:
+
 ```json
 {
   "creator_profiles": {
@@ -394,64 +775,186 @@ Store Andrew's writing style in Firestore:
 }
 ```
 
-**n8n Workflow Design:**
+**Cloud Function Design:**
 
-**Nodes:**
-1. **Webhook Trigger** (receives `{ conversationId, messageText, senderId }`)
-2. **Firestore Node 1** - Fetch recent messages
-   - Query: Get last 20 messages from conversation
-   - Provides conversation context
-3. **Firestore Node 2** - Fetch creator profile
-   - Collection: `creator_profiles/andrew`
-   - Get writing style, examples, personality
-4. **Function Node** - Build context prompt
-   ```javascript
-   const recentMessages = $node["Firestore1"].json.messages;
-   const profile = $node["Firestore2"].json;
-   const fanMessage = $input.item.json.messageText;
+**Create: `functions/src/smart-replies.ts`**
 
-   // Build conversation context
-   const context = recentMessages.map(m =>
-     `${m.senderName}: ${m.text}`
-   ).join('\n');
+```typescript
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import OpenAI from 'openai';
 
-   return {
-     systemPrompt: `You are Andrew, a ${profile.personality}
+const openai = new OpenAI({
+  apiKey: functions.config().openai.key,
+});
 
-     Your tone: ${profile.tone}
+interface Message {
+  senderName: string;
+  text: string;
+  timestamp: number;
+}
 
-     Example responses you've written:
-     ${profile.examples.join('\n')}
+interface CreatorProfile {
+  personality: string;
+  tone: string;
+  examples: string[];
+  avoid: string[];
+  signature?: string;
+}
 
-     Avoid: ${profile.avoid.join(', ')}
+interface SmartReplyResponse {
+  drafts: {
+    short: string;
+    medium: string;
+    detailed: string;
+  };
+}
 
-     Recent conversation context:
-     ${context}`,
+/**
+ * Generate 3 context-aware smart replies in creator's voice
+ * Features: Response Drafting (2) + Advanced AI Capability
+ */
+export const generateSmartReplies = functions.https.onCall(async (data, context) => {
+  const { conversationId, messageText } = data;
 
-     userPrompt: `The fan just sent: "${fanMessage}"
+  if (!conversationId || !messageText) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'conversationId and messageText are required'
+    );
+  }
 
-     Generate 3 reply options:
-     1. Short (1 sentence, quick acknowledgment)
-     2. Medium (2-3 sentences, friendly and helpful)
-     3. Detailed (4-5 sentences, comprehensive response)
+  try {
+    // Fetch recent messages from RTDB (last 20)
+    const messagesSnapshot = await admin.database()
+      .ref(`/messages/${conversationId}`)
+      .orderByChild('timestamp')
+      .limitToLast(20)
+      .once('value');
 
-     Make each option sound authentic to Andrew's voice. Use conversation context to make replies relevant.
+    const messages: Message[] = [];
+    messagesSnapshot.forEach((child) => {
+      messages.push(child.val() as Message);
+    });
 
-     Format as JSON: { "short": "...", "medium": "...", "detailed": "..." }`
-   };
-   ```
-5. **OpenAI Chat Node**
-   - Model: `gpt-4`
-   - System message: `{{systemPrompt}}`
-   - User message: `{{userPrompt}}`
-   - Temperature: 0.7 (creative but consistent)
-6. **Code Node** - Parse JSON response
-7. **Webhook Response** (return `{ drafts: [short, medium, detailed] }`)
+    // Fetch creator profile from Firestore
+    const profileDoc = await admin.firestore()
+      .collection('creator_profiles')
+      .doc('andrew')
+      .get();
+
+    if (!profileDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'Creator profile not found');
+    }
+
+    const profile = profileDoc.data() as CreatorProfile;
+
+    // Build context prompt
+    const conversationContext = messages
+      .map((m) => `${m.senderName}: ${m.text}`)
+      .join('\n');
+
+    const systemPrompt = `You are Andrew, a ${profile.personality}
+
+Your tone: ${profile.tone}
+
+Example responses you've written:
+${profile.examples.join('\n')}
+
+Avoid: ${profile.avoid.join(', ')}
+
+Recent conversation context:
+${conversationContext}`;
+
+    const userPrompt = `The fan just sent: "${messageText}"
+
+Generate 3 reply options:
+1. Short (1 sentence, quick acknowledgment)
+2. Medium (2-3 sentences, friendly and helpful)
+3. Detailed (4-5 sentences, comprehensive response)
+
+Make each option sound authentic to Andrew's voice. Use conversation context to make replies relevant.
+
+Respond with ONLY valid JSON in this exact format:
+{
+  "short": "your short reply here",
+  "medium": "your medium reply here",
+  "detailed": "your detailed reply here"
+}`;
+
+    // Call OpenAI GPT-4
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      response_format: { type: 'json_object' },
+    });
+
+    const responseText = completion.choices[0].message.content;
+
+    if (!responseText) {
+      throw new Error('No response from OpenAI');
+    }
+
+    const drafts = JSON.parse(responseText);
+
+    return {
+      drafts: {
+        short: drafts.short || '',
+        medium: drafts.medium || '',
+        detailed: drafts.detailed || '',
+      },
+    } as SmartReplyResponse;
+
+  } catch (error) {
+    functions.logger.error('Smart reply generation failed:', error);
+    throw new functions.https.HttpsError('internal', 'Smart reply generation failed');
+  }
+});
+```
+
+**Update: `functions/src/index.ts`**
+```typescript
+export { generateSmartReplies } from './smart-replies';
+```
 
 **iOS Integration:**
 
-**New View: `SmartReplyPickerView.swift`**
+**Update: `AIService.swift`**
 ```swift
+struct SmartReplyResponse: Codable {
+    struct Drafts: Codable {
+        let short: String
+        let medium: String
+        let detailed: String
+    }
+    let drafts: Drafts
+}
+
+func generateSmartReplies(
+    conversationId: String,
+    messageText: String
+) async throws -> [String] {
+    let result = try await functions.httpsCallable("generateSmartReplies")
+        .call([
+            "conversationId": conversationId,
+            "messageText": messageText
+        ])
+
+    let data = try JSONSerialization.data(withJSONObject: result.data)
+    let response = try JSONDecoder().decode(SmartReplyResponse.self, from: data)
+
+    return [response.drafts.short, response.drafts.medium, response.drafts.detailed]
+}
+```
+
+**Create: `buzzbox/Core/Views/Components/SmartReplyPickerView.swift`**
+```swift
+import SwiftUI
+
 struct SmartReplyPickerView: View {
     let drafts: [String]
     let onSelect: (String) -> Void
@@ -466,7 +969,7 @@ struct SmartReplyPickerView: View {
                 Button {
                     onSelect(draft)
                 } label: {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text(draftLabel(index))
                                 .font(.caption)
@@ -474,10 +977,12 @@ struct SmartReplyPickerView: View {
                             Spacer()
                             Text("\(draft.count) chars")
                                 .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
                         Text(draft)
                             .font(.body)
                             .multilineTextAlignment(.leading)
+                            .foregroundStyle(.primary)
                     }
                     .padding()
                     .background(Color(.systemGray6))
@@ -498,25 +1003,46 @@ struct SmartReplyPickerView: View {
 }
 ```
 
-**Update `MessageThreadView.swift`:**
+**Update: `MessageThreadView.swift`**
 ```swift
 struct MessageThreadView: View {
+    @StateObject private var viewModel: MessageThreadViewModel
+    @EnvironmentObject private var aiService: AIService
+
     @State private var showSmartReplies = false
     @State private var smartReplyDrafts: [String] = []
+    @State private var isLoadingDrafts = false
+    @State private var messageText = ""
 
     var body: some View {
         VStack {
             messageListView
 
             HStack {
-                if isCreator {
-                    Button("✨ Draft Reply") {
+                if viewModel.isCreator {
+                    Button {
                         Task {
-                            let drafts = try await viewModel.generateSmartReplies()
-                            smartReplyDrafts = drafts
-                            showSmartReplies = true
+                            isLoadingDrafts = true
+                            do {
+                                smartReplyDrafts = try await aiService.generateSmartReplies(
+                                    conversationId: viewModel.conversationId,
+                                    messageText: viewModel.lastMessage?.text ?? ""
+                                )
+                                showSmartReplies = true
+                            } catch {
+                                // Show error toast
+                                print("Failed to generate drafts: \(error)")
+                            }
+                            isLoadingDrafts = false
+                        }
+                    } label: {
+                        if isLoadingDrafts {
+                            ProgressView()
+                        } else {
+                            Label("Draft Reply", systemImage: "sparkles")
                         }
                     }
+                    .disabled(isLoadingDrafts)
                 }
 
                 messageComposer
@@ -531,39 +1057,14 @@ struct MessageThreadView: View {
                 },
                 onDismiss: { showSmartReplies = false }
             )
+            .presentationDetents([.medium, .large])
         }
     }
 }
 ```
 
-**In `AIService.swift`:**
-```swift
-actor AIService {
-    func generateSmartReplies(
-        conversationId: String,
-        messageText: String
-    ) async throws -> [String] {
-        let url = URL(string: "\(n8nBaseURL)/smart-replies")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let body = [
-            "conversationId": conversationId,
-            "messageText": messageText
-        ]
-        request.httpBody = try JSONEncoder().encode(body)
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response = try JSONDecoder().decode(SmartReplyResponse.self, from: data)
-
-        return [response.drafts.short, response.drafts.medium, response.drafts.detailed]
-    }
-}
-```
-
 **Acceptance Criteria:**
-- [ ] n8n workflow fetches conversation context (last 20 messages)
+- [ ] Cloud Function fetches conversation context (last 20 messages)
 - [ ] Creator profile with style examples stored in Firestore
 - [ ] GPT-4 generates 3 distinct reply options
 - [ ] iOS shows smart reply picker with 3 options
@@ -571,6 +1072,8 @@ actor AIService {
 - [ ] Response time <8s (meets rubric target)
 - [ ] Drafts sound authentic to Andrew's voice
 - [ ] Drafts use conversation context (not generic)
+- [ ] Loading state shows while generating
+- [ ] Error handling with user-friendly messages
 
 **Advanced AI Capability Requirements Met:**
 - ✅ Learns user style accurately (from examples + profile)
@@ -579,11 +1082,11 @@ actor AIService {
 - ✅ Response times meet targets (<8s)
 - ✅ Context-aware (uses recent messages)
 
-**Estimate:** 2.5 hours
+**Estimate:** 2 hours
 
 ---
 
-### Story 6.5: iOS AI Service Integration (1.5 hours)
+### Story 6.5: iOS AI Service Integration (30 min)
 
 **As a developer, I want a clean AIService layer so all AI features are centralized and testable.**
 
@@ -591,53 +1094,17 @@ actor AIService {
 
 ```swift
 import Foundation
+import FirebaseFunctions
 
-/// AI service for n8n workflow integration
-/// Handles all AI features: categorization, FAQ, sentiment, opportunity scoring, smart replies
+/// AI service for Firebase Cloud Functions integration
+/// Handles FAQ auto-responder and smart reply generation
+/// Note: Auto-processing (categorization, sentiment, scoring) happens automatically via Cloud Function triggers
 @MainActor
 final class AIService: ObservableObject {
 
     // MARK: - Configuration
 
-    private let n8nBaseURL: String
-
-    init(n8nBaseURL: String = ProcessInfo.processInfo.environment["N8N_BASE_URL"] ?? "") {
-        self.n8nBaseURL = n8nBaseURL
-    }
-
-    // MARK: - Auto-Processing (Features 1, 4, 5)
-
-    struct AIMetadata: Codable {
-        let category: MessageCategory
-        let sentiment: MessageSentiment
-        let score: Int?  // Only for business messages
-    }
-
-    enum MessageCategory: String, Codable {
-        case fan, business, spam, urgent
-    }
-
-    enum MessageSentiment: String, Codable {
-        case positive, negative, urgent, neutral
-    }
-
-    func processMessage(_ text: String) async throws -> AIMetadata {
-        let url = URL(string: "\(n8nBaseURL)/process-message")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["text": text])
-        request.timeoutInterval = 5  // 5 second timeout
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw AIServiceError.networkError
-        }
-
-        return try JSONDecoder().decode(AIMetadata.self, from: data)
-    }
+    private let functions = Functions.functions()
 
     // MARK: - FAQ Auto-Responder (Feature 3)
 
@@ -647,15 +1114,12 @@ final class AIService: ObservableObject {
         let confidence: Double?
     }
 
+    /// Check if message matches FAQ and return auto-response
     func checkFAQ(_ text: String) async throws -> FAQResponse {
-        let url = URL(string: "\(n8nBaseURL)/check-faq")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["text": text])
-        request.timeoutInterval = 3
+        let result = try await functions.httpsCallable("checkFAQ")
+            .call(["text": text])
 
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let data = try JSONSerialization.data(withJSONObject: result.data)
         return try JSONDecoder().decode(FAQResponse.self, from: data)
     }
 
@@ -670,42 +1134,21 @@ final class AIService: ObservableObject {
         let drafts: Drafts
     }
 
+    /// Generate 3 context-aware smart replies in creator's voice
     func generateSmartReplies(
         conversationId: String,
         messageText: String
     ) async throws -> [String] {
-        let url = URL(string: "\(n8nBaseURL)/smart-replies")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let result = try await functions.httpsCallable("generateSmartReplies")
+            .call([
+                "conversationId": conversationId,
+                "messageText": messageText
+            ])
 
-        let body = [
-            "conversationId": conversationId,
-            "messageText": messageText
-        ]
-        request.httpBody = try JSONEncoder().encode(body)
-        request.timeoutInterval = 10  // Longer timeout for GPT-4
-
-        let (data, _) = try await URLSession.shared.data(for: request)
+        let data = try JSONSerialization.data(withJSONObject: result.data)
         let response = try JSONDecoder().decode(SmartReplyResponse.self, from: data)
 
         return [response.drafts.short, response.drafts.medium, response.drafts.detailed]
-    }
-
-    // MARK: - Error Handling
-
-    enum AIServiceError: LocalizedError {
-        case networkError
-        case invalidResponse
-        case timeout
-
-        var errorDescription: String? {
-            switch self {
-            case .networkError: return "Failed to connect to AI service"
-            case .invalidResponse: return "Invalid response from AI service"
-            case .timeout: return "AI request timed out"
-            }
-        }
     }
 }
 ```
@@ -728,18 +1171,18 @@ struct buzzboxApp: App {
 ```
 
 **Acceptance Criteria:**
-- [ ] AIService created with all 5 features
+- [ ] AIService created with FAQ and Smart Replies features
 - [ ] Clean async/await API
-- [ ] Proper error handling and timeouts
-- [ ] Injectable for testing
-- [ ] Environment variable for n8n URL
-- [ ] Codable models for all responses
+- [ ] Uses Firebase Functions SDK (not direct HTTP)
+- [ ] Injectable via @EnvironmentObject for testing
+- [ ] Proper error handling (throws)
+- [ ] No hardcoded URLs (uses Firebase SDK)
 
-**Estimate:** 1.5 hours
+**Estimate:** 30 min
 
 ---
 
-### Story 6.6: Message Model Updates for AI Metadata (30 min)
+### Story 6.6: Message Model Updates for AI Metadata (45 min)
 
 **As a developer, I want to store AI metadata on messages so the UI can display categories, sentiment, and scores.**
 
@@ -779,7 +1222,8 @@ final class MessageEntity {
         aiCategory: String? = nil,
         aiSentiment: String? = nil,
         aiOpportunityScore: Int? = nil,
-        isAIGenerated: Bool = false
+        isAIGenerated: Bool = false,
+        aiProcessedAt: Date? = nil
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -792,42 +1236,90 @@ final class MessageEntity {
         self.aiSentiment = aiSentiment
         self.aiOpportunityScore = aiOpportunityScore
         self.isAIGenerated = isAIGenerated
+        self.aiProcessedAt = aiProcessedAt
     }
 }
 ```
 
-**Update Firestore sync to include AI fields:**
+**Update RTDB Sync (RealtimeDBService):**
+
+**Update: `buzzbox/Core/Services/RealtimeDBService.swift`**
 
 ```swift
-// In FirestoreService.swift - syncMessage()
+/// Sync message to RTDB with AI metadata
 func syncMessage(_ message: MessageEntity) async throws {
-    let data: [String: Any] = [
+    let messageRef = database.child("messages")
+        .child(message.conversationID)
+        .child(message.id)
+
+    var data: [String: Any] = [
         "id": message.id,
         "text": message.text,
         "senderID": message.senderID,
-        "timestamp": Timestamp(date: message.timestamp),
-        // ... other fields
-
-        // AI Metadata
-        "aiCategory": message.aiCategory ?? NSNull(),
-        "aiSentiment": message.aiSentiment ?? NSNull(),
-        "aiOpportunityScore": message.aiOpportunityScore ?? NSNull(),
-        "isAIGenerated": message.isAIGenerated,
-        "aiProcessedAt": message.aiProcessedAt.map { Timestamp(date: $0) } ?? NSNull()
+        "timestamp": ServerValue.timestamp(),
+        "status": message.status.rawValue,
+        "readBy": message.readBy,
     ]
 
-    try await db.collection("messages").document(message.id).setData(data)
+    // AI Metadata (optional fields)
+    if let aiCategory = message.aiCategory {
+        data["aiCategory"] = aiCategory
+    }
+    if let aiSentiment = message.aiSentiment {
+        data["aiSentiment"] = aiSentiment
+    }
+    if let aiOpportunityScore = message.aiOpportunityScore {
+        data["aiOpportunityScore"] = aiOpportunityScore
+    }
+    data["isAIGenerated"] = message.isAIGenerated
+    if let aiProcessedAt = message.aiProcessedAt {
+        data["aiProcessedAt"] = aiProcessedAt.timeIntervalSince1970
+    }
+
+    try await messageRef.setValue(data)
+}
+
+/// Listen for AI metadata updates from Cloud Functions
+func observeMessageUpdates(conversationId: String, handler: @escaping (MessageEntity) -> Void) {
+    let messagesRef = database.child("messages").child(conversationId)
+
+    messagesRef.observe(.childChanged) { snapshot in
+        guard let dict = snapshot.value as? [String: Any] else { return }
+
+        // Parse AI metadata
+        let message = MessageEntity(
+            id: dict["id"] as? String ?? "",
+            conversationID: conversationId,
+            senderID: dict["senderID"] as? String ?? "",
+            text: dict["text"] as? String ?? "",
+            timestamp: Date(timeIntervalSince1970: dict["timestamp"] as? TimeInterval ?? 0),
+            status: MessageStatus(rawValue: dict["status"] as? String ?? "sent") ?? .sent,
+            readBy: dict["readBy"] as? [String] ?? [],
+            aiCategory: dict["aiCategory"] as? String,
+            aiSentiment: dict["aiSentiment"] as? String,
+            aiOpportunityScore: dict["aiOpportunityScore"] as? Int,
+            isAIGenerated: dict["isAIGenerated"] as? Bool ?? false,
+            aiProcessedAt: (dict["aiProcessedAt"] as? TimeInterval).map { Date(timeIntervalSince1970: $0) }
+        )
+
+        handler(message)
+    }
 }
 ```
 
-**Acceptance Criteria:**
-- [ ] AI fields added to MessageEntity
-- [ ] SwiftData migration handled (optional fields)
-- [ ] Firestore sync includes AI metadata
-- [ ] Firebase RTDB includes AI metadata
-- [ ] Backward compatible with existing messages
+**SwiftData Migration:**
 
-**Estimate:** 30 min
+SwiftData handles schema changes automatically when adding optional fields. Existing messages will have `nil` for AI metadata.
+
+**Acceptance Criteria:**
+- [ ] AI fields added to MessageEntity (all optional except `isAIGenerated`)
+- [ ] SwiftData migration handled automatically (optional fields)
+- [ ] RTDB sync includes AI metadata
+- [ ] RTDB observer updates messages when AI metadata arrives
+- [ ] Backward compatible with existing messages (nil values)
+- [ ] Cloud Function updates propagate to iOS automatically
+
+**Estimate:** 45 min
 
 ---
 
@@ -991,8 +1483,273 @@ struct MessageBubbleView: View {
 - [ ] AI-generated badge for FAQ responses
 - [ ] Only shows on creator's view of fan messages
 - [ ] Looks good in light and dark mode
+- [ ] Animates in when AI metadata arrives
 
 **Estimate:** 1.5 hours
+
+---
+
+### Story 6.8: Error Handling & Degraded Mode (1 hour)
+
+**As a user, I want messages to work even when AI features fail so the core messaging experience is reliable.**
+
+**Update: `functions/src/ai-processing.ts`**
+
+```typescript
+export const processMessageAI = functions.database
+  .ref('/messages/{conversationId}/{messageId}')
+  .onWrite(async (change, context) => {
+    // Only process new messages (not updates)
+    if (!change.after.exists()) {
+      return null;
+    }
+
+    const message = change.after.val() as Message;
+
+    // Only process messages sent to creator
+    const CREATOR_ID = 'andrew_creator_id';
+    if (message.receiverId !== CREATOR_ID) {
+      return null;
+    }
+
+    // Skip if already processed
+    if (change.after.child('aiCategory').exists()) {
+      return null;
+    }
+
+    try {
+      // Parallel processing with timeout
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('AI processing timeout')), 5000)
+      );
+
+      const processing = Promise.all([
+        categorizeMessage(message.text),
+        analyzeSentiment(message.text),
+        scoreOpportunity(message.text),
+      ]);
+
+      const [category, sentiment, score] = await Promise.race([
+        processing,
+        timeout,
+      ]) as [string, string, number | null];
+
+      // Update with AI metadata
+      await change.after.ref.update({
+        aiCategory: category,
+        aiSentiment: sentiment,
+        aiOpportunityScore: score,
+        aiProcessedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: true };
+
+    } catch (error) {
+      // Log error but don't fail
+      functions.logger.error('AI processing failed:', error);
+
+      // Mark as failed so we don't retry
+      await change.after.ref.update({
+        aiProcessingFailed: true,
+        aiProcessedAt: admin.database.ServerValue.TIMESTAMP,
+      });
+
+      return { success: false, error: String(error) };
+    }
+  });
+```
+
+**Update: `AIService.swift`**
+
+```swift
+func checkFAQ(_ text: String) async throws -> FAQResponse {
+    do {
+        let result = try await functions.httpsCallable("checkFAQ")
+            .call(["text": text])
+
+        let data = try JSONSerialization.data(withJSONObject: result.data)
+        return try JSONDecoder().decode(FAQResponse.self, from: data)
+    } catch {
+        // Log error but don't throw - return non-FAQ response
+        print("FAQ check failed: \(error)")
+        return FAQResponse(isFAQ: false, answer: nil, confidence: nil)
+    }
+}
+
+func generateSmartReplies(
+    conversationId: String,
+    messageText: String
+) async throws -> [String] {
+    do {
+        let result = try await functions.httpsCallable("generateSmartReplies")
+            .call([
+                "conversationId": conversationId,
+                "messageText": messageText
+            ])
+
+        let data = try JSONSerialization.data(withJSONObject: result.data)
+        let response = try JSONDecoder().decode(SmartReplyResponse.self, from: data)
+
+        return [response.drafts.short, response.drafts.medium, response.drafts.detailed]
+    } catch {
+        // Re-throw for smart replies - user initiated action should show error
+        throw AIServiceError.smartReplyFailed(error)
+    }
+}
+
+enum AIServiceError: LocalizedError {
+    case smartReplyFailed(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .smartReplyFailed:
+            return "Failed to generate smart replies. Please try again."
+        }
+    }
+}
+```
+
+**Update: `MessageThreadView.swift`**
+
+```swift
+Button {
+    Task {
+        isLoadingDrafts = true
+        do {
+            smartReplyDrafts = try await aiService.generateSmartReplies(
+                conversationId: viewModel.conversationId,
+                messageText: viewModel.lastMessage?.text ?? ""
+            )
+            showSmartReplies = true
+        } catch {
+            // Show error toast
+            errorMessage = "Failed to generate AI replies. Please try again."
+            showError = true
+        }
+        isLoadingDrafts = false
+    }
+} label: {
+    if isLoadingDrafts {
+        ProgressView()
+    } else {
+        Label("Draft Reply", systemImage: "sparkles")
+    }
+}
+.disabled(isLoadingDrafts)
+.alert("Error", isPresented: $showError) {
+    Button("OK", role: .cancel) { }
+} message: {
+    Text(errorMessage)
+}
+```
+
+**Acceptance Criteria:**
+- [ ] Messages send/receive even if Cloud Functions are down
+- [ ] Auto-processing has 5s timeout
+- [ ] Failed AI processing doesn't retry indefinitely
+- [ ] FAQ check failures return `isFAQ: false` (silent fail)
+- [ ] Smart reply failures show user-friendly error
+- [ ] Error logs in Firebase Console for debugging
+- [ ] Degraded mode clearly visible (no AI badges)
+
+**Estimate:** 1 hour
+
+---
+
+### Story 6.9: AI Settings UI (30 min)
+
+**As Andrew, I want to control AI behavior so I can disable features I don't want.**
+
+**Create: `buzzbox/Core/Views/Settings/AISettingsView.swift`**
+
+```swift
+import SwiftUI
+
+struct AISettingsView: View {
+    @AppStorage("ai.faqAutoResponse.enabled") private var faqAutoResponseEnabled = true
+    @AppStorage("ai.autoProcessing.enabled") private var autoProcessingEnabled = true
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("FAQ Auto-Response", isOn: $faqAutoResponseEnabled)
+                Text("Automatically send FAQ answers when fans ask common questions")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Auto-Response")
+            }
+
+            Section {
+                Toggle("Auto-Categorization", isOn: $autoProcessingEnabled)
+                Text("Automatically analyze messages with AI (categorization, sentiment, scoring)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("AI Processing")
+            }
+
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Smart Replies")
+                        .font(.headline)
+                    Text("Always available via 'Draft Reply' button")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Manual Features")
+            }
+        }
+        .navigationTitle("AI Settings")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+```
+
+**Update: `MessageThreadViewModel.swift`**
+
+```swift
+@AppStorage("ai.faqAutoResponse.enabled") private var faqAutoResponseEnabled = true
+
+func receiveMessage(_ message: MessageEntity) async {
+    messages.append(message)
+
+    // Only check FAQ if enabled in settings
+    if faqAutoResponseEnabled && message.receiverId == CREATOR_ID {
+        do {
+            let faqResponse = try await aiService.checkFAQ(message.text)
+
+            if faqResponse.isFAQ, let answer = faqResponse.answer {
+                await sendMessage(answer, isAIGenerated: true)
+            }
+        } catch {
+            print("FAQ check failed: \(error)")
+        }
+    }
+}
+```
+
+**Add to Settings:**
+
+```swift
+// In SettingsView.swift
+NavigationLink {
+    AISettingsView()
+} label: {
+    Label("AI Settings", systemImage: "sparkles")
+}
+```
+
+**Acceptance Criteria:**
+- [ ] AI Settings view created
+- [ ] Toggle for FAQ auto-response
+- [ ] Toggle for auto-processing (future: can disable Cloud Function)
+- [ ] Settings persist via @AppStorage
+- [ ] FAQ auto-response respects toggle
+- [ ] Accessible from main settings
+
+**Estimate:** 30 min
 
 ---
 
@@ -1000,16 +1757,24 @@ struct MessageBubbleView: View {
 
 | Story | Description | Time |
 |-------|-------------|------|
-| 6.1 | n8n Setup & Configuration | 30 min |
-| 6.2 | Auto-Processing Workflow (Features 1, 4, 5) | 1.5 hrs |
-| 6.3 | FAQ Auto-Responder (Feature 3) | 1.5 hrs |
-| 6.4 | Context-Aware Smart Replies (Feature 2 + Advanced) | 2.5 hrs |
-| 6.5 | iOS AI Service Integration | 1.5 hrs |
-| 6.6 | Message Model Updates | 30 min |
+| 6.1 | Firebase Cloud Functions Setup | 45 min |
+| 6.2 | Auto-Processing Cloud Function (Features 1, 4, 5) | 2 hrs |
+| 6.3 | FAQ Cloud Function (Feature 3) | 1.5 hrs |
+| 6.4 | Smart Replies Cloud Function (Feature 2 + Advanced) | 2 hrs |
+| 6.5 | iOS AI Service Integration | 30 min |
+| 6.6 | Message Model Updates | 45 min |
 | 6.7 | AI UI Components | 1.5 hrs |
-| **TOTAL** | | **9 hours** |
+| 6.8 | Error Handling & Degraded Mode | 1 hr |
+| 6.9 | AI Settings UI | 30 min |
+| **TOTAL** | | **~11 hours** |
 
-### Buffer: None needed (conservative estimates)
+### Adjustments from Original:
+- **Removed:** n8n setup overhead (saved 30 min)
+- **Simplified:** iOS integration (Cloud Functions SDK vs webhooks, saved 1 hr)
+- **Added:** Error handling story (+1 hr)
+- **Added:** Settings UI story (+30 min)
+
+**Realistic estimate: 11 hours** (vs original n8n approach: 12.5 hours)
 
 ---
 
@@ -1039,14 +1804,13 @@ final class MessageEntity {
 
 ### Firestore Collections (New)
 
-**FAQ Collection:**
+**FAQ Collection (Manual Creation):**
 ```
 /faqs/{faqId}
   - question: String
   - answer: String
-  - embedding: [Double]  // OpenAI embedding vector
+  - embedding: [Double]  // Generated by Cloud Function
   - category: String
-  - variations: [String]
 ```
 
 **Creator Profile Collection:**
@@ -1057,6 +1821,30 @@ final class MessageEntity {
   - examples: [String]
   - avoid: [String]
   - signature: String
+```
+
+### RTDB Structure (Updated)
+
+**Messages with AI Metadata:**
+```json
+{
+  "messages": {
+    "conversation_123": {
+      "msg_001": {
+        "id": "msg_001",
+        "text": "Hey, love your content!",
+        "senderID": "fan_456",
+        "receiverId": "andrew_creator_id",
+        "timestamp": 1234567890,
+        "aiCategory": "fan",
+        "aiSentiment": "positive",
+        "aiOpportunityScore": null,
+        "isAIGenerated": false,
+        "aiProcessedAt": 1234567891
+      }
+    }
+  }
+}
 ```
 
 ---
@@ -1072,15 +1860,17 @@ final class MessageEntity {
 - ✅ FAQ questions get instant auto-responses (>80% confidence)
 - ✅ "Draft Reply" button generates 3 options in Andrew's voice
 - ✅ AI uses conversation context for relevant replies
-- ✅ All AI features respond within latency targets (<2s simple, <8s advanced)
+- ✅ All AI features respond within latency targets (<1s auto, <8s smart replies)
 
 ### Technical Requirements
-- ✅ 3 n8n workflows deployed and operational
+- ✅ 3 Cloud Functions deployed and operational
 - ✅ AIService integrated into iOS app
 - ✅ MessageEntity includes AI metadata fields
 - ✅ Firestore has FAQ library with embeddings
 - ✅ Creator profile with writing style examples stored
-- ✅ All API calls properly secured (API keys in n8n only)
+- ✅ All API calls properly secured (Firebase Auth)
+- ✅ RTDB triggers auto-process messages
+- ✅ Error handling with graceful degradation
 
 ### UX Requirements
 - ✅ AI badges visible and color-coded on messages
@@ -1089,6 +1879,7 @@ final class MessageEntity {
 - ✅ Creator can edit AI drafts before sending
 - ✅ Loading states for AI processing
 - ✅ Error handling with user-friendly messages
+- ✅ Settings to control AI behavior
 
 ### Scoring Requirements (40 points total)
 - ✅ **Feature 1:** Auto-categorization working
@@ -1104,89 +1895,107 @@ final class MessageEntity {
 
 ## 🚨 Risks & Mitigations
 
-### Risk 1: n8n Latency Exceeds Targets
-**Impact:** Could lose points for slow response times
+### Risk 1: Cloud Functions Cold Start Latency
+**Impact:** First request after idle could be 2-3s slower
 **Mitigation:**
-- Use GPT-3.5-turbo for simple tasks (categorization, sentiment)
-- Reserve GPT-4 only for smart replies
-- Run categorization/sentiment/scoring in parallel
-- Set aggressive timeouts (5s max)
-- Test latency early, switch to Cloud Functions if needed
+- Keep functions "warm" with scheduled pings (1x/hour)
+- Use min instances (1) for production (costs ~$5/month)
+- Optimize function size (remove unused dependencies)
+- Acceptable: Auto-processing is async, users won't notice
 
-### Risk 2: n8n Deployment Issues
-**Impact:** Could block implementation
+### Risk 2: OpenAI API Rate Limits
+**Impact:** 429 errors during high usage
 **Mitigation:**
-- Use n8n Cloud (managed hosting, $20/month)
-- Alternative: Docker self-hosted on DigitalOcean ($6/month)
-- Have backup plan: Cloud Functions implementation ready
-- Test n8n deployment in Story 6.1 (first story)
+- Start with Tier 1 limits (3,500 RPM)
+- Implement exponential backoff in Cloud Functions
+- Queue requests if rate limited
+- Monitor usage in OpenAI dashboard
+- Budget for Tier 2 upgrade if needed ($50 prepaid)
 
 ### Risk 3: OpenAI API Costs
-**Impact:** High costs during testing/demo
+**Impact:** Higher than expected costs
 **Mitigation:**
-- Use GPT-3.5-turbo where possible (10x cheaper)
-- Cache common FAQ embeddings
-- Set rate limits (100 requests/user/hour)
-- Monitor usage in OpenAI dashboard
-- Budget: $20-30 for entire sprint
+- Use GPT-3.5-turbo for simple tasks (10x cheaper than GPT-4)
+- Cache FAQ embeddings (one-time generation)
+- Set budget alerts in OpenAI ($20, $50)
+- Monitor per-feature costs
+- Estimated: $15-25 for testing/demo
 
-### Risk 4: AI Accuracy Too Low
-**Impact:** Features work but aren't useful
+### Risk 4: Firebase Functions Quota Limits
+**Impact:** Free tier may not be enough
 **Mitigation:**
-- Use strong prompts with examples
-- Test with real-world fan messages
-- Tune confidence thresholds (FAQ: 80%, categorization: 70%)
-- Provide manual override for all AI features
-- Show confidence scores in UI for transparency
+- Free tier: 2M invocations/month, 400K GB-sec
+- Auto-processing: ~5K messages = 5K invocations
+- Smart replies: ~500 requests = 500 invocations
+- Total: ~10K invocations << 2M limit
+- Acceptable: Will stay in free tier
 
-### Risk 5: Context Window Limits
+### Risk 5: AI Accuracy Issues
+**Impact:** Poor categorization/sentiment/replies
+**Mitigation:**
+- Use strong prompts with clear examples
+- Test with real fan messages
+- Tune confidence thresholds (FAQ: 80%, category: 70%)
+- Allow manual override/correction
+- Show confidence scores in UI
+- Iterate on prompts based on testing
+
+### Risk 6: Context Window Limits
 **Impact:** Can't include enough conversation context
 **Mitigation:**
-- Limit to last 20 messages (sufficient for most conversations)
-- Use message summaries if needed (GPT-4 Turbo has 128k context)
+- Limit to last 20 messages (fits in 8K context)
+- GPT-4 Turbo has 128K context (plenty of headroom)
 - Test with long conversations (100+ messages)
-- Fallback to recent context if full history too large
+- Summarize old context if needed (future enhancement)
 
 ---
 
 ## 📦 Implementation Order
 
-### Phase 1: Infrastructure (1 hour)
-1. Deploy n8n instance (Cloud or self-hosted)
-2. Configure OpenAI API credentials
-3. Set up Firestore service account
-4. Create FAQ collection with 10-15 FAQs
-5. Create creator profile with style examples
+### Phase 1: Infrastructure (45 min)
+1. Initialize Firebase Cloud Functions
+2. Install OpenAI SDK
+3. Configure API keys
+4. Deploy test function
+5. Set up Firebase Emulator Suite
 
 ### Phase 2: Auto-Processing (2 hours)
-6. Build n8n Workflow 1 (categorization + sentiment + scoring)
-7. Test workflow with sample messages
-8. Integrate AIService.processMessage() in iOS
-9. Update MessageEntity with AI fields
+6. Write auto-processing Cloud Function (categorization + sentiment + scoring)
+7. Test with sample messages
+8. Update MessageEntity with AI fields
+9. Update RTDB sync to include AI metadata
 10. Add AI badges to MessageBubbleView
 
 ### Phase 3: FAQ Auto-Responder (2 hours)
-11. Generate embeddings for FAQ library
-12. Build n8n Workflow 2 (FAQ matching)
-13. Integrate AIService.checkFAQ() in iOS
-14. Add auto-response logic to message receiving
-15. Add AI-generated badge to UI
+11. Create 10-15 FAQs in Firestore manually
+12. Write Cloud Function to generate FAQ embeddings
+13. Write checkFAQ Cloud Function (vector search)
+14. Add AIService.checkFAQ() in iOS
+15. Integrate FAQ auto-response in message receiving
+16. Add AI-generated badge to UI
 
 ### Phase 4: Context-Aware Smart Replies (3 hours)
-16. Build n8n Workflow 3 (smart reply generation)
-17. Test with conversation context fetching
-18. Create SmartReplyPickerView UI component
-19. Integrate "Draft Reply" button
-20. Test end-to-end with real conversations
+17. Create creator profile in Firestore manually
+18. Write generateSmartReplies Cloud Function
+19. Test with conversation context fetching
+20. Create SmartReplyPickerView UI component
+21. Add "Draft Reply" button to MessageThreadView
+22. Test end-to-end with real conversations
 
-### Phase 5: Polish & Testing (1 hour)
-21. Test all 5 AI features end-to-end
-22. Verify latency meets targets
-23. Test error handling (network failures, timeouts)
-24. Polish UI animations and loading states
-25. Update documentation
+### Phase 5: Error Handling & Settings (1.5 hours)
+23. Add timeout and error handling to Cloud Functions
+24. Add graceful degradation to iOS
+25. Create AI Settings UI
+26. Wire up settings toggles
 
-**Total: 9 hours**
+### Phase 6: Polish & Testing (1 hour)
+27. Test all 5 AI features end-to-end
+28. Verify latency meets targets
+29. Test error handling (network failures, timeouts)
+30. Polish UI animations and loading states
+31. Update documentation
+
+**Total: ~11 hours**
 
 ---
 
@@ -1194,8 +2003,10 @@ final class MessageEntity {
 
 - **Project Brief:** `docs/project-brief.md` (Content Creator persona, 5 required features)
 - **Scoring Rubric:** `docs/scoring.md` (Section 3: 30 pts AI + 10 pts Advanced)
-- **Tech Stack:** `docs/architecture/technology-stack.md` (OpenAI, Firestore, n8n)
+- **Tech Stack:** `docs/architecture/technology-stack.md` (OpenAI, Firebase)
 - **Epic 5:** Single-Creator Platform (provides inbox for AI to manage)
+- **Firebase Functions Docs:** https://firebase.google.com/docs/functions
+- **OpenAI API Docs:** https://platform.openai.com/docs
 
 ---
 
@@ -1206,7 +2017,7 @@ final class MessageEntity {
 2. ✅ Advanced AI Capability (Context-Aware Smart Replies) complete
 3. ✅ **40 points secured** (AI Features + Advanced)
 4. 🚀 **Epic 7: Documentation & Demo Video** (avoid -30 points in penalties)
-5. 🚀 **Epic 8: Testing & Polish** (ensure B+ or A- grade)
+5. 🚀 **Epic 8: Testing & Polish** (ensure A- or A grade)
 
 **Current Points Estimate:**
 - Core Messaging: 28-30/35 ✅
@@ -1222,7 +2033,7 @@ final class MessageEntity {
 
 **Epic Status:** 🟢 Ready to Implement
 **Blockers:** None (Epic 5 completed)
-**Risk Level:** Low-Medium (n8n hosting main risk, mitigated with Cloud option)
+**Risk Level:** Low (Firebase + OpenAI is proven stack)
 **Strategic Value:** CRITICAL - 40% of total grade
 
-**Recommendation: START EPIC 6 IMMEDIATELY AFTER EPIC 5. This is 40 points waiting to be claimed.**
+**Recommendation: START EPIC 6 IMMEDIATELY. Firebase Cloud Functions approach is faster, cheaper, and more reliable than n8n.**

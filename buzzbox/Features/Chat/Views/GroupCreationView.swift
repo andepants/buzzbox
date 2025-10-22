@@ -128,12 +128,12 @@ struct GroupCreationView: View {
                         }
                     }
                 } header: {
-                    Text("Group Photo")
+                    Text("Channel Photo")
                 }
 
-                // Group Name Section
+                // Channel Name Section
                 Section {
-                    TextField("Enter group name", text: $groupName)
+                    TextField("Enter channel name", text: $groupName)
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.words)
 
@@ -141,7 +141,7 @@ struct GroupCreationView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } header: {
-                    Text("Group Name")
+                    Text("Channel Name")
                 } footer: {
                     Text("Name must be 1-50 characters")
                 }
@@ -156,7 +156,7 @@ struct GroupCreationView: View {
                     Text("Select 2-256 participants")
                 }
             }
-            .navigationTitle("New Group")
+            .navigationTitle("New Channel")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -197,7 +197,7 @@ struct GroupCreationView: View {
                         VStack(spacing: 16) {
                             ProgressView()
                                 .scaleEffect(1.5)
-                            Text("Creating group...")
+                            Text("Creating channel...")
                                 .font(.headline)
                         }
                         .padding(24)
@@ -283,10 +283,10 @@ struct GroupCreationView: View {
         } catch {
             await MainActor.run {
                 isCreating = false
-                errorMessage = "Failed to create group: \(error.localizedDescription)"
+                errorMessage = "Failed to create channel: \(error.localizedDescription)"
                 showError = true
             }
-            print("❌ Group creation failed: \(error)")
+            print("❌ Channel creation failed: \(error)")
         }
     }
 

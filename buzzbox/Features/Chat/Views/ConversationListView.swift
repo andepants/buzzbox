@@ -69,7 +69,7 @@ struct ConversationListView: View {
                 }
             }
             .searchable(text: $searchText, prompt: "Search conversations")
-            .navigationTitle("Messages")
+            .navigationTitle("Channels")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     profileButton
@@ -131,8 +131,8 @@ struct ConversationListView: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(.blue)
         }
-        .accessibilityLabel("New Group")
-        .accessibilityHint("Create a group conversation with multiple participants")
+        .accessibilityLabel("New Channel")
+        .accessibilityHint("Create a channel conversation with multiple participants")
     }
 
     private var newMessageButton: some View {

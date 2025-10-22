@@ -45,14 +45,28 @@ struct ConversationRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 // Name and timestamp row
                 HStack {
-                    Text(recipientUser?.displayName ?? "Loading...")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.primary)
+                    // Show # prefix for channels (groups)
+                    if conversation.isGroup {
+                        Text(conversation.displayName ?? "Channel")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    } else {
+                        Text(recipientUser?.displayName ?? "Loading...")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.primary)
+                    }
 
-                    // ✅ Creator badge
+                    // ✅ Creator badge (for 1:1 conversations)
                     // [Source: Story 5.2 - User Type Auto-Assignment]
-                    if recipientUser?.userType == .creator {
+                    if !conversation.isGroup && recipientUser?.userType == .creator {
                         CreatorBadgeView(size: .small)
+                    }
+
+                    // Lock icon for creator-only channels
+                    if conversation.isGroup && conversation.isCreatorOnly {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
 
                     if conversation.isPinned {
@@ -179,6 +193,9 @@ struct ConversationRowView: View {
     /// Load recipient user and start presence listener
     /// [Source: Story 2.8 - User Presence & Online Status]
     private func loadRecipientAndPresence() async {
+        // Skip loading recipient for channels (groups)
+        guard !conversation.isGroup else { return }
+
         guard let currentUserID = Auth.auth().currentUser?.uid else { return }
         guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
             return
@@ -195,6 +212,9 @@ struct ConversationRowView: View {
     /// Stop listening to presence updates
     /// [Source: Story 2.8 - User Presence & Online Status]
     private func stopPresenceListener() {
+        // Skip for channels (groups)
+        guard !conversation.isGroup else { return }
+
         guard let currentUserID = Auth.auth().currentUser?.uid else { return }
         guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
             return

@@ -34,6 +34,11 @@ Package.resolved
 GoogleService-Info.plist
 **/GoogleService-Info.plist
 
+# Firebase service account keys (NEVER commit these)
+*-key.json
+**/*-key.json
+firebase/scripts/*-key.json
+
 # Apple Keys & Certificates (NEVER commit these)
 *.p8
 *.p12

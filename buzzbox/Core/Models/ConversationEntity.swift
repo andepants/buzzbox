@@ -33,6 +33,9 @@ final class ConversationEntity {
     /// Is this a group conversation?
     var isGroup: Bool
 
+    /// Is this a creator-only channel (only creator can post)?
+    var isCreatorOnly: Bool
+
     /// Creation timestamp
     var createdAt: Date
 
@@ -87,6 +90,7 @@ final class ConversationEntity {
         groupPhotoURL: String? = nil,
         adminUserIDs: [String] = [],
         isGroup: Bool = false,
+        isCreatorOnly: Bool = false,
         createdAt: Date = Date(),
         syncStatus: SyncStatus = .pending
     ) {
@@ -96,6 +100,7 @@ final class ConversationEntity {
         self.groupPhotoURL = groupPhotoURL
         self.adminUserIDs = adminUserIDs
         self.isGroup = isGroup
+        self.isCreatorOnly = isCreatorOnly
         self.createdAt = createdAt
         self.updatedAt = createdAt
         self.isPinned = false
@@ -140,5 +145,16 @@ final class ConversationEntity {
     /// For use in ConversationViewModel to avoid async property access
     func getRecipientID(currentUserID: String) -> String? {
         participantIDs.first(where: { $0 != currentUserID })
+    }
+
+    /// Check if user can post to this conversation
+    /// - Parameter isCreator: Whether the current user is the creator
+    /// - Returns: True if user can post, false otherwise
+    func canUserPost(isCreator: Bool) -> Bool {
+        // If not a creator-only channel, everyone can post
+        guard isCreatorOnly else { return true }
+
+        // Only creator can post to creator-only channels
+        return isCreator
     }
 }
