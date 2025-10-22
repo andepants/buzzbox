@@ -153,12 +153,6 @@ enum MessageStatus: String, Codable {
     case read
 }
 
-enum SyncStatus: String, Codable {
-    case pending
-    case synced
-    case failed
-}
-
 enum MessageCategory: String, Codable {
     case fan
     case business

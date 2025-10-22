@@ -74,16 +74,6 @@ final class AuthViewModel: ObservableObject {
                isDisplayNameValid &&
                displayNameAvailability == .available
 
-        // Debug logging
-        if !valid {
-            print("📋 Form validation:")
-            print("   Email valid: \(isEmailValid)")
-            print("   Password valid: \(isPasswordValid)")
-            print("   Passwords match: \(passwordsMatch)")
-            print("   Display name valid: \(isDisplayNameValid)")
-            print("   Display name availability: \(displayNameAvailability)")
-        }
-
         return valid
     }
 
@@ -116,19 +106,15 @@ final class AuthViewModel: ObservableObject {
 
         // Reset if invalid format
         guard isDisplayNameValid else {
-            print("❌ Display name invalid format: '\(displayName)'")
             displayNameAvailability = .unknown
             return
         }
-
-        print("🔍 Checking availability for: '\(displayName)'")
 
         // Debounce check (500ms)
         displayNameCheckTask = Task {
             try? await Task.sleep(for: .milliseconds(500))
 
             guard !Task.isCancelled else {
-                print("⏸️ Display name check cancelled")
                 return
             }
 
@@ -136,9 +122,7 @@ final class AuthViewModel: ObservableObject {
                 let service = DisplayNameService()
                 let isAvailable = try await service.checkAvailability(displayName)
                 displayNameAvailability = isAvailable ? .available : .taken
-                print("✅ Display name '\(displayName)': \(isAvailable ? "available" : "taken")")
             } catch {
-                print("❌ Display name check failed: \(error.localizedDescription)")
                 displayNameAvailability = .unknown
             }
         }
@@ -175,16 +159,13 @@ final class AuthViewModel: ObservableObject {
             // Update local state
             currentUser = user
             isAuthenticated = true
-            print("✅ Sign up successful: \(user.email)")
 
             // Success - navigation handled by parent view observing isAuthenticated
         } catch let error as AuthError {
             errorMessage = error.errorDescription
-            print("❌ Sign up failed: \(error.errorDescription ?? "Unknown error")")
             throw error
         } catch {
             errorMessage = "An unexpected error occurred. Please try again."
-            print("❌ Sign up failed: \(error.localizedDescription)")
             throw error
         }
     }
@@ -224,7 +205,6 @@ final class AuthViewModel: ObservableObject {
                 isAuthenticated = false
             }
         } catch {
-            print("Auto-login failed: \(error.localizedDescription)")
             isAuthenticated = false
 
             // Clear invalid token
@@ -240,7 +220,6 @@ final class AuthViewModel: ObservableObject {
         do {
             try await authService.refreshAuthIfNeeded(lastActiveDate: lastActiveDate)
         } catch {
-            print("Token refresh failed: \(error.localizedDescription)")
             // Token refresh failed - force re-login
             isAuthenticated = false
             currentUser = nil

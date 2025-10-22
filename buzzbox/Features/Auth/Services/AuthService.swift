@@ -13,7 +13,7 @@ import Foundation
 import Combine
 import FirebaseAuth
 import FirebaseFirestore
-// import FirebaseDatabase // TODO: Add FirebaseDatabase package to project
+@preconcurrency import FirebaseDatabase
 import SwiftData
 import Kingfisher
 
@@ -24,7 +24,7 @@ final class AuthService: ObservableObject {
 
     private let auth: Auth
     private let firestore: Firestore
-    // private let database: Database // TODO: Re-enable when FirebaseDatabase is added
+    nonisolated(unsafe) private let database: DatabaseReference
     private let displayNameService: DisplayNameService
 
     /// Current authenticated user (observable)
@@ -42,12 +42,12 @@ final class AuthService: ObservableObject {
     init(
         auth: Auth = Auth.auth(),
         firestore: Firestore = Firestore.firestore(),
-        // database: Database = Database.database(), // TODO: Re-enable when FirebaseDatabase is added
+        database: DatabaseReference = Database.database().reference(),
         displayNameService: DisplayNameService = DisplayNameService()
     ) {
         self.auth = auth
         self.firestore = firestore
-        // self.database = database // TODO: Re-enable when FirebaseDatabase is added
+        self.database = database
         self.displayNameService = displayNameService
 
         // Set up auth state listener (recommended by Firebase docs)
@@ -62,7 +62,6 @@ final class AuthService: ObservableObject {
             guard let self = self else { return }
             Task { @MainActor in
                 self.isAuthenticated = user != nil
-                print("🔐 Auth state changed: \(user?.email ?? "Not signed in")")
             }
         }
     }
@@ -99,10 +98,8 @@ final class AuthService: ObservableObject {
 
         // 3. Create Firebase Auth user
         do {
-            print("🔐 Creating Firebase Auth user for: \(email)")
             let authResult = try await auth.createUser(withEmail: email, password: password)
             let uid = authResult.user.uid
-            print("✅ Firebase Auth user created: \(uid)")
 
             // 4. Reserve displayName in Firestore (for uniqueness)
             try await displayNameService.reserveDisplayName(displayName, userId: uid)
@@ -116,15 +113,23 @@ final class AuthService: ObservableObject {
             ]
             try await firestore.collection("users").document(uid).setData(userData)
 
-            // 6. Initialize user presence in Realtime Database
-            // TODO: Re-enable when FirebaseDatabase is added
-            // let presenceRef = database.reference().child("userPresence").child(uid)
-            // try await presenceRef.setValue([
-            //     "status": "online",
-            //     "lastSeen": ServerValue.timestamp()
-            // ])
+            // 6. Create user profile in Realtime Database (for conversation validation)
+            let userRef = database.child("users").child(uid)
+            try await userRef.setValue([
+                "email": email,
+                "displayName": displayName,
+                "profilePictureURL": "",
+                "createdAt": ServerValue.timestamp()
+            ])
 
-            // 7. Create local SwiftData UserEntity
+            // 7. Initialize user presence in Realtime Database
+            let presenceRef = database.child("userPresence").child(uid)
+            try await presenceRef.setValue([
+                "status": "online",
+                "lastSeen": ServerValue.timestamp()
+            ])
+
+            // 8. Create local SwiftData UserEntity
             let userEntity = UserEntity(
                 id: uid,
                 email: email,
@@ -135,7 +140,7 @@ final class AuthService: ObservableObject {
             modelContext.insert(userEntity)
             try modelContext.save()
 
-            // 8. Create and return User struct
+            // 9. Create and return User struct
             let user = User(
                 id: uid,
                 email: email,
@@ -151,13 +156,6 @@ final class AuthService: ObservableObject {
             return user
 
         } catch let error as NSError {
-            // Print detailed error information
-            print("❌ Firebase createUser error:")
-            print("   Domain: \(error.domain)")
-            print("   Code: \(error.code)")
-            print("   Description: \(error.localizedDescription)")
-            print("   UserInfo: \(error.userInfo)")
-
             // Map Firebase errors to AuthError
             throw mapFirebaseError(error)
         }
@@ -274,15 +272,23 @@ final class AuthService: ObservableObject {
             }
             try modelContext.save()
 
-            // 8. Update user presence in Realtime Database
-            // TODO: Re-enable when FirebaseDatabase is added
-            // let presenceRef = database.reference().child("userPresence").child(uid)
-            // try await presenceRef.updateChildValues([
-            //     "status": "online",
-            //     "lastSeen": ServerValue.timestamp()
-            // ])
+            // 8. Ensure user exists in Realtime Database (for conversation validation)
+            let userRef = database.child("users").child(uid)
+            try await userRef.setValue([
+                "email": userEmail,
+                "displayName": displayName,
+                "profilePictureURL": photoURL ?? "",
+                "updatedAt": ServerValue.timestamp()
+            ])
 
-            // 9. Update published state
+            // 9. Update user presence in Realtime Database
+            let presenceRef = database.child("userPresence").child(uid)
+            try await presenceRef.updateChildValues([
+                "status": "online",
+                "lastSeen": ServerValue.timestamp()
+            ])
+
+            // 10. Update published state
             self.currentUser = user
             self.isAuthenticated = true
 

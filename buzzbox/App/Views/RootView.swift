@@ -64,63 +64,7 @@ struct LoadingView: View {
     }
 }
 
-// MARK: - Temporary Placeholder
-
-/// Temporary placeholder for conversation list (to be implemented in later stories)
-struct ConversationListView: View {
-    @EnvironmentObject private var authViewModel: AuthViewModel
-
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                Image(systemName: "message.fill")
-                    .font(.system(size: 60))
-                    .foregroundColor(.blue)
-
-                Text("Buzzbox")
-                    .font(.largeTitle)
-                    .fontWeight(.bold)
-
-                Text("Logged in successfully!")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                if let user = authViewModel.currentUser {
-                    VStack(spacing: 8) {
-                        Text("Email: \(user.email)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-
-                        Text("Username: @\(user.displayName)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                }
-
-                Text("Conversation list coming soon...")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .padding(.top, 20)
-            }
-            .navigationTitle("Messages")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        Task {
-                            await authViewModel.logout()
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "rectangle.portrait.and.arrow.right")
-                            Text("Logout")
-                        }
-                        .foregroundColor(.red)
-                    }
-                }
-            }
-        }
-    }
-}
+// Note: ConversationListView is now implemented in Features/Chat/Views/ConversationListView.swift
 
 // MARK: - Preview
 

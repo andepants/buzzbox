@@ -56,6 +56,11 @@ final class ConversationEntity {
     /// Last message sender ID
     var lastMessageSenderID: String?
 
+    // MARK: - Sync Status
+
+    /// Sync status for offline-first architecture
+    var syncStatus: SyncStatus
+
     // MARK: - AI Metadata
 
     /// Supermemory conversation ID for RAG context
@@ -74,7 +79,8 @@ final class ConversationEntity {
         participantIDs: [String],
         displayName: String? = nil,
         isGroup: Bool = false,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        syncStatus: SyncStatus = .pending
     ) {
         self.id = id
         self.participantIDs = participantIDs
@@ -86,6 +92,7 @@ final class ConversationEntity {
         self.isMuted = false
         self.isArchived = false
         self.unreadCount = 0
+        self.syncStatus = syncStatus
         self.messages = []
     }
 
@@ -117,5 +124,11 @@ final class ConversationEntity {
     /// Get messages pending sync
     var pendingSyncMessages: [MessageEntity] {
         messages.filter { $0.isPendingSync }
+    }
+
+    /// Get recipient ID (other participant in one-on-one conversation)
+    /// For use in ConversationViewModel to avoid async property access
+    func getRecipientID(currentUserID: String) -> String? {
+        participantIDs.first(where: { $0 != currentUserID })
     }
 }
