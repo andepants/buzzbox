@@ -1,45 +1,87 @@
 /// ConversationListView.swift
 ///
 /// Main view showing list of conversations
-/// Features "New Message" button, conversation list, and navigation
+/// Features real-time updates, search, swipe actions, pull-to-refresh, network status
 ///
 /// Created: 2025-10-21
-/// [Source: Story 2.1 - Create New Conversation]
+/// [Source: Story 2.2 - Display Conversation List]
 
 import SwiftUI
 import SwiftData
 import FirebaseAuth
+import FirebaseDatabase
 
-/// Main view displaying all conversations
+/// Main view displaying all conversations with real-time updates
 struct ConversationListView: View {
     // MARK: - Properties
 
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \ConversationEntity.updatedAt, order: .reverse)
-    private var conversations: [ConversationEntity]
+
+    // Query non-archived conversations sorted by last message timestamp
+    @Query(
+        filter: #Predicate<ConversationEntity> { conversation in
+            conversation.isArchived == false
+        },
+        sort: [SortDescriptor(\ConversationEntity.updatedAt, order: .reverse)]
+    ) private var conversations: [ConversationEntity]
 
     @State private var viewModel: ConversationViewModel?
     @State private var showRecipientPicker = false
-    @State private var selectedConversation: ConversationEntity?
-    @State private var errorMessage: String?
-    @State private var showError = false
+    @State private var searchText = ""
+    @EnvironmentObject var networkMonitor: NetworkMonitor
+
+    // MARK: - Computed Properties
+
+    var filteredConversations: [ConversationEntity] {
+        if searchText.isEmpty {
+            return Array(conversations)
+        }
+        return conversations.filter { conversation in
+            // Search by last message content
+            if let lastMessage = conversation.lastMessageText,
+               lastMessage.localizedCaseInsensitiveContains(searchText) {
+                return true
+            }
+            // TODO: Search by recipient name when recipient loading is implemented
+            return false
+        }
+    }
 
     // MARK: - Body
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                if conversations.isEmpty {
+            List {
+                // Network status banner
+                if !networkMonitor.isConnected {
+                    NetworkStatusBanner()
+                }
+
+                // Conversations or empty state
+                if filteredConversations.isEmpty && searchText.isEmpty {
                     emptyStateView
+                } else if filteredConversations.isEmpty {
+                    emptySearchView
                 } else {
                     conversationsList
                 }
             }
+            .searchable(text: $searchText, prompt: "Search conversations")
             .navigationTitle("Messages")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     newMessageButton
                 }
+            }
+            .refreshable {
+                await viewModel?.syncConversations()
+            }
+            .task {
+                setupViewModel()
+                await viewModel?.startRealtimeListener()
+            }
+            .onDisappear {
+                viewModel?.stopRealtimeListener()
             }
             .sheet(isPresented: $showRecipientPicker) {
                 RecipientPickerView { userID in
@@ -47,16 +89,6 @@ struct ConversationListView: View {
                         await createConversation(withUserID: userID)
                     }
                 }
-            }
-            .alert("Error", isPresented: $showError) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                if let errorMessage {
-                    Text(errorMessage)
-                }
-            }
-            .onAppear {
-                setupViewModel()
             }
         }
     }
@@ -77,21 +109,68 @@ struct ConversationListView: View {
 
     private var emptyStateView: some View {
         ContentUnavailableView(
-            "No Messages",
-            systemImage: "bubble.left.and.bubble.right",
-            description: Text("Tap the compose button to start a new conversation")
+            "No Conversations",
+            systemImage: "message",
+            description: Text("Tap + to start messaging")
         )
+        .listRowSeparator(.hidden)
+    }
+
+    private var emptySearchView: some View {
+        ContentUnavailableView(
+            "No Results",
+            systemImage: "magnifyingglass",
+            description: Text("No conversations match '\(searchText)'")
+        )
+        .listRowSeparator(.hidden)
     }
 
     private var conversationsList: some View {
-        List(conversations) { conversation in
+        ForEach(filteredConversations) { conversation in
             NavigationLink(value: conversation) {
                 ConversationRowView(conversation: conversation)
             }
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    archiveConversation(conversation)
+                } label: {
+                    Label("Archive", systemImage: "archivebox")
+                }
+            }
+            .contextMenu {
+                Button {
+                    togglePin(conversation)
+                } label: {
+                    Label(
+                        conversation.isPinned ? "Unpin" : "Pin",
+                        systemImage: conversation.isPinned ? "pin.slash" : "pin"
+                    )
+                }
+
+                Button {
+                    toggleUnread(conversation)
+                } label: {
+                    Label(
+                        conversation.unreadCount > 0 ? "Mark as Read" : "Mark as Unread",
+                        systemImage: "envelope.badge"
+                    )
+                }
+
+                Button {
+                    archiveConversation(conversation)
+                } label: {
+                    Label("Archive", systemImage: "archivebox")
+                }
+
+                Button(role: .destructive) {
+                    deleteConversation(conversation)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
         }
-        .listStyle(.plain)
         .navigationDestination(for: ConversationEntity.self) { conversation in
-            // TODO: Navigate to MessageThreadView
+            // TODO: Navigate to MessageThreadView when Story 2.3 is complete
             Text("Conversation: \(conversation.id)")
                 .navigationTitle("Chat")
         }
@@ -106,117 +185,61 @@ struct ConversationListView: View {
     }
 
     private func createConversation(withUserID userID: String) async {
-        guard let viewModel = viewModel else {
-            errorMessage = "ViewModel not initialized"
-            showError = true
-            return
-        }
-
-        guard let currentUserID = Auth.auth().currentUser?.uid else {
-            errorMessage = "You must be logged in to create a conversation"
-            showError = true
-            return
-        }
+        guard let viewModel = viewModel else { return }
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
 
         do {
-            let conversation = try await viewModel.createConversation(
+            let _ = try await viewModel.createConversation(
                 withUserID: userID,
                 currentUserID: currentUserID
             )
-
-            // Navigate to the conversation
-            selectedConversation = conversation
-            print("✅ Created conversation: \(conversation.id)")
-
-        } catch let error as ConversationError {
-            errorMessage = error.errorDescription
-            showError = true
         } catch {
-            errorMessage = "Failed to create conversation: \(error.localizedDescription)"
-            showError = true
+            print("❌ Failed to create conversation: \(error)")
         }
     }
-}
 
-// MARK: - Conversation Row View
+    private func archiveConversation(_ conversation: ConversationEntity) {
+        conversation.isArchived = true
+        try? modelContext.save()
 
-/// Row view for displaying a single conversation in the list
-struct ConversationRowView: View {
-    let conversation: ConversationEntity
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Avatar
-            Circle()
-                .fill(Color.blue.gradient)
-                .frame(width: 52, height: 52)
-                .overlay {
-                    Text(getInitials())
-                        .font(.title3.bold())
-                        .foregroundStyle(.white)
-                }
-
-            VStack(alignment: .leading, spacing: 4) {
-                // Display name or recipient ID
-                Text(conversation.displayName ?? "Conversation")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.primary)
-
-                // Last message preview
-                if let lastMessage = conversation.lastMessageText {
-                    Text(lastMessage)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                } else {
-                    Text("No messages yet")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.tertiary)
-                        .italic()
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                // Timestamp
-                if let lastMessageAt = conversation.lastMessageAt {
-                    Text(lastMessageAt, style: .time)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                }
-
-                // Unread badge
-                if conversation.unreadCount > 0 {
-                    Text("\(conversation.unreadCount)")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue)
-                        .clipShape(Capsule())
-                }
-
-                // Sync status indicator
-                if conversation.syncStatus == .pending {
-                    Image(systemName: "clock")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.orange)
-                } else if conversation.syncStatus == .failed {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.red)
-                }
-            }
+        // Sync to RTDB
+        Task {
+            try? await ConversationService.shared.syncConversation(conversation)
         }
-        .padding(.vertical, 4)
+
+        print("📦 Archived conversation: \(conversation.id)")
     }
 
-    private func getInitials() -> String {
-        if let displayName = conversation.displayName {
-            return String(displayName.prefix(1).uppercased())
+    private func togglePin(_ conversation: ConversationEntity) {
+        conversation.isPinned.toggle()
+        try? modelContext.save()
+
+        // Haptic feedback
+        #if os(iOS)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        #endif
+
+        print("\(conversation.isPinned ? "📌" : "📍") \(conversation.isPinned ? "Pinned" : "Unpinned"): \(conversation.id)")
+    }
+
+    private func toggleUnread(_ conversation: ConversationEntity) {
+        conversation.unreadCount = conversation.unreadCount > 0 ? 0 : 1
+        try? modelContext.save()
+
+        print("\(conversation.unreadCount > 0 ? "📬" : "📭") \(conversation.unreadCount > 0 ? "Marked unread" : "Marked read"): \(conversation.id)")
+    }
+
+    private func deleteConversation(_ conversation: ConversationEntity) {
+        modelContext.delete(conversation)
+        try? modelContext.save()
+
+        // Delete from RTDB
+        Task {
+            let conversationRef = Database.database().reference().child("conversations/\(conversation.id)")
+            try? await conversationRef.removeValue()
         }
-        return "?"
+
+        print("🗑️ Deleted conversation: \(conversation.id)")
     }
 }
 
@@ -225,4 +248,5 @@ struct ConversationRowView: View {
 #Preview {
     ConversationListView()
         .modelContainer(for: [ConversationEntity.self, MessageEntity.self, UserEntity.self])
+        .environmentObject(NetworkMonitor.shared)
 }

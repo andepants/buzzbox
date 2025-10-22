@@ -405,15 +405,23 @@ final class AuthService: ObservableObject {
         }
         try modelContext.save()
 
-        // 9. Update user presence in Realtime Database
-        // TODO: Re-enable when FirebaseDatabase is added
-        // let presenceRef = database.reference().child("userPresence").child(uid)
-        // try await presenceRef.updateChildValues([
-        //     "status": "online",
-        //     "lastSeen": ServerValue.timestamp()
-        // ])
+        // 9. Ensure user exists in Realtime Database (for conversation validation)
+        let userRef = database.child("users").child(uid)
+        try await userRef.setValue([
+            "email": email,
+            "displayName": displayName,
+            "profilePictureURL": photoURL ?? "",
+            "updatedAt": ServerValue.timestamp()
+        ])
 
-        // 10. Update published state
+        // 10. Update user presence in Realtime Database
+        let presenceRef = database.child("userPresence").child(uid)
+        try await presenceRef.updateChildValues([
+            "status": "online",
+            "lastSeen": ServerValue.timestamp()
+        ])
+
+        // 11. Update published state
         self.currentUser = user
         self.isAuthenticated = true
 
@@ -540,12 +548,18 @@ final class AuthService: ObservableObject {
         // 3. Update Firestore user document
         try await firestore.collection("users").document(uid).updateData(updateData)
 
-        // 4. Update Realtime Database presence (optional: add displayName for quick lookup)
-        // TODO: Re-enable when FirebaseDatabase is added
-        // if let displayName = displayName {
-        //     let presenceRef = database.reference().child("userPresence").child(uid)
-        //     try await presenceRef.updateChildValues(["displayName": displayName])
-        // }
+        // 4. Update Realtime Database user profile
+        var rtdbUpdateData: [String: Any] = [:]
+        if let displayName = displayName {
+            rtdbUpdateData["displayName"] = displayName
+        }
+        if let photoURL = photoURL {
+            rtdbUpdateData["profilePictureURL"] = photoURL.absoluteString
+        }
+        rtdbUpdateData["updatedAt"] = ServerValue.timestamp()
+
+        let userRef = database.child("users").child(uid)
+        try await userRef.updateChildValues(rtdbUpdateData)
 
         // 5. Update local SwiftData UserEntity
         let descriptor = FetchDescriptor<UserEntity>(

@@ -9,6 +9,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseDatabase
+import FirebaseAuth
 
 /// ViewModel for managing conversation operations
 @MainActor
@@ -21,6 +22,7 @@ final class ConversationViewModel {
 
     private let modelContext: ModelContext
     private let conversationService: ConversationService
+    private var realtimeListenerHandle: DatabaseHandle?
 
     // MARK: - Initialization
 
@@ -130,6 +132,125 @@ final class ConversationViewModel {
         }
 
         return conversation
+    }
+
+    // MARK: - Real-Time Listener
+
+    /// Starts listening to RTDB for conversation updates
+    /// [Source: Story 2.2 - Real-time RTDB listener]
+    func startRealtimeListener() async {
+        guard let currentUserID = Auth.auth().currentUser?.uid else {
+            print("⚠️ Cannot start listener: No authenticated user")
+            return
+        }
+
+        let conversationsRef = Database.database().reference().child("conversations")
+
+        realtimeListenerHandle = conversationsRef.observe(.value) { [weak self] snapshot in
+            guard let self = self else { return }
+
+            Task { @MainActor in
+                await self.processConversationSnapshot(snapshot, currentUserID: currentUserID)
+            }
+        }
+
+        print("👂 Started real-time RTDB listener for conversations")
+    }
+
+    /// Stops the real-time RTDB listener
+    nonisolated func stopRealtimeListener() {
+        Task { @MainActor in
+            if let handle = realtimeListenerHandle {
+                Database.database().reference().child("conversations").removeObserver(withHandle: handle)
+                realtimeListenerHandle = nil
+                print("🛑 Stopped real-time RTDB listener")
+            }
+        }
+    }
+
+    /// Manually sync conversations from RTDB (for pull-to-refresh)
+    func syncConversations() async {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+
+        isLoading = true
+        defer { isLoading = false }
+
+        let conversationsRef = Database.database().reference().child("conversations")
+
+        do {
+            let snapshot = try await conversationsRef.getData()
+            await processConversationSnapshot(snapshot, currentUserID: currentUserID)
+            print("🔄 Manual sync complete")
+        } catch {
+            self.error = .networkError
+            print("❌ Manual sync failed: \(error)")
+        }
+    }
+
+    /// Processes conversation snapshot from RTDB
+    private func processConversationSnapshot(_ snapshot: DataSnapshot, currentUserID: String) async {
+        for child in snapshot.children.allObjects as? [DataSnapshot] ?? [] {
+            guard let conversationData = child.value as? [String: Any] else { continue }
+
+            // Check if current user is participant
+            let participantIDs = conversationData["participantIDs"] as? [String] ?? []
+            guard participantIDs.contains(currentUserID) else { continue }
+
+            let conversationID = child.key
+
+            // Check if exists locally
+            let descriptor = FetchDescriptor<ConversationEntity>(
+                predicate: #Predicate { $0.id == conversationID }
+            )
+
+            let existing = try? modelContext.fetch(descriptor).first
+
+            if existing == nil {
+                // New conversation from RTDB
+                let conversation = ConversationEntity(
+                    id: conversationID,
+                    participantIDs: participantIDs,
+                    displayName: nil,
+                    isGroup: false,
+                    createdAt: Date(
+                        timeIntervalSince1970: conversationData["createdAt"] as? TimeInterval ?? 0
+                    ),
+                    syncStatus: .synced
+                )
+
+                // Update last message fields
+                conversation.lastMessageText = conversationData["lastMessage"] as? String
+                conversation.lastMessageAt = Date(
+                    timeIntervalSince1970: conversationData["lastMessageTimestamp"] as? TimeInterval ?? 0
+                )
+                conversation.unreadCount = conversationData["unreadCount"] as? Int ?? 0
+                conversation.updatedAt = Date(
+                    timeIntervalSince1970: conversationData["updatedAt"] as? TimeInterval ?? 0
+                )
+
+                modelContext.insert(conversation)
+                print("➕ New conversation from RTDB: \(conversationID)")
+            } else if let existing = existing {
+                // Update existing conversation
+                existing.lastMessageText = conversationData["lastMessage"] as? String
+                existing.lastMessageAt = Date(
+                    timeIntervalSince1970: conversationData["lastMessageTimestamp"] as? TimeInterval ?? 0
+                )
+                existing.unreadCount = conversationData["unreadCount"] as? Int ?? 0
+                existing.updatedAt = Date(
+                    timeIntervalSince1970: conversationData["updatedAt"] as? TimeInterval ?? 0
+                )
+                print("🔄 Updated conversation: \(conversationID)")
+            }
+
+            try? modelContext.save()
+        }
+    }
+
+    // MARK: - Cleanup
+
+    deinit {
+        stopRealtimeListener()
     }
 }
 

@@ -25,6 +25,7 @@ struct buzzboxApp: App {
     @State private var lastActiveDate = Date()
     @State private var showPrivacyOverlay = false
     @StateObject private var authViewModel = AuthViewModel()
+    @StateObject private var networkMonitor = NetworkMonitor.shared
 
     // MARK: - Initialization
 
@@ -48,6 +49,7 @@ struct buzzboxApp: App {
             ZStack {
                 RootView()
                     .environmentObject(authViewModel)
+                    .environmentObject(networkMonitor)
 
                 // Privacy overlay when app backgrounds
                 if showPrivacyOverlay {
