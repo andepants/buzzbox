@@ -15,9 +15,14 @@ struct MessageBubbleView: View {
     // MARK: - Properties
 
     let message: MessageEntity
+    let conversation: ConversationEntity
+    let participants: [UserEntity]
 
     /// Optional retry handler for failed messages (provided by parent view)
     var onRetry: ((MessageEntity) -> Void)? = nil
+
+    /// State for showing read receipts sheet
+    @State private var showReadReceipts = false
 
     // MARK: - Computed Properties
 
@@ -34,6 +39,11 @@ struct MessageBubbleView: View {
     /// Text color based on sender
     private var textColor: Color {
         isFromCurrentUser ? .white : .primary
+    }
+
+    /// Check if read receipts can be shown (own messages in groups only, not system messages)
+    private var canShowReadReceipts: Bool {
+        isFromCurrentUser && conversation.isGroup && !message.isSystemMessage
     }
 
     // MARK: - Body
@@ -95,6 +105,14 @@ struct MessageBubbleView: View {
             }
 
             if !isFromCurrentUser { Spacer(minLength: 60) }
+        }
+        .onLongPressGesture {
+            if canShowReadReceipts {
+                showReadReceipts = true
+            }
+        }
+        .sheet(isPresented: $showReadReceipts) {
+            ReadReceiptsView(message: message, participants: participants)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)

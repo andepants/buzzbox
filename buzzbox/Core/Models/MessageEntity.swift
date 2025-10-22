@@ -57,8 +57,8 @@ final class MessageEntity {
 
     // MARK: - Read Receipts
 
-    /// Array of user IDs who have read this message
-    var readBy: [String]
+    /// Dictionary mapping user IDs to read timestamps (for group read receipts)
+    var readBy: [String: Date]
 
     // MARK: - System Messages
 
@@ -129,7 +129,7 @@ final class MessageEntity {
         self.status = status
         self.syncStatus = syncStatus
         self.retryCount = 0
-        self.readBy = []
+        self.readBy = [:]
         self.isSystemMessage = isSystemMessage
         self.attachments = []
     }

@@ -41,6 +41,9 @@ struct MessageThreadView: View {
     // Group info state
     @State private var showGroupInfo = false
 
+    // Read receipt listener
+    @State private var readReceiptListenerHandle: DatabaseHandle?
+
     // MARK: - Initialization
 
     init(conversation: ConversationEntity) {
@@ -107,6 +110,8 @@ struct MessageThreadView: View {
                         ForEach(messages) { message in
                             MessageBubbleView(
                                 message: message,
+                                conversation: conversation,
+                                participants: participants,
                                 onRetry: { failedMessage in
                                     Task {
                                         await viewModel.retryFailedMessage(failedMessage)
@@ -215,6 +220,12 @@ struct MessageThreadView: View {
             // Start presence listener
             await startPresenceListener()
 
+            // Start read receipt listener
+            startReadReceiptListener()
+
+            // Mark all visible messages as read
+            await markVisibleMessagesAsRead()
+
             await loadRecipientName()
             await viewModel.startRealtimeListener()
             await viewModel.markAsRead()
@@ -238,6 +249,9 @@ struct MessageThreadView: View {
 
             // Stop presence listener
             stopPresenceListener()
+
+            // Stop read receipt listener
+            stopReadReceiptListener()
 
             viewModel.stopRealtimeListener()
         }
@@ -373,5 +387,46 @@ struct MessageThreadView: View {
         }
 
         UserPresenceService.shared.stopListening(userID: recipientID)
+    }
+
+    // MARK: - Read Receipt Methods
+
+    /// Start listening to read receipt updates for this conversation
+    /// [Source: Story 3.6 - Group Read Receipts]
+    private func startReadReceiptListener() {
+        readReceiptListenerHandle = MessageService.shared.listenToReadReceipts(
+            conversationID: conversation.id
+        ) { [weak modelContext] messageID, readByDates in
+            guard let modelContext = modelContext else { return }
+
+            // Update SwiftData with new read receipts
+            let descriptor = FetchDescriptor<MessageEntity>(
+                predicate: #Predicate<MessageEntity> { msg in
+                    msg.id == messageID
+                }
+            )
+
+            if let message = try? modelContext.fetch(descriptor).first {
+                message.readBy = readByDates
+                try? modelContext.save()
+            }
+        }
+    }
+
+    /// Stop listening to read receipt updates
+    /// [Source: Story 3.6 - Group Read Receipts]
+    private func stopReadReceiptListener() {
+        guard let handle = readReceiptListenerHandle else { return }
+        MessageService.shared.stopListening(conversationID: conversation.id, handle: handle)
+    }
+
+    /// Mark all visible messages as read by current user
+    /// [Source: Story 3.6 - Group Read Receipts]
+    private func markVisibleMessagesAsRead() async {
+        await MessageService.shared.markMessagesAsRead(
+            messages: messages,
+            conversationID: conversation.id,
+            modelContext: modelContext
+        )
     }
 }
