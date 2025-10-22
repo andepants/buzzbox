@@ -18,7 +18,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		65C9731A2EA92D6100670C9C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		65C973332EA96CF400670C9C /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		65DFAD8C2EA8620A00B68AF2 /* buzzbox.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = buzzbox.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -62,7 +62,7 @@
 				65DFAD8E2EA8620A00B68AF2 /* buzzbox */,
 				65DFAD8D2EA8620A00B68AF2 /* Products */,
 				651C78462EA898B300C5C50C /* Frameworks */,
-				65C9731A2EA92D6100670C9C /* GoogleService-Info.plist */,
+				65C973332EA96CF400670C9C /* GoogleService-Info.plist */,
 			);
 			sourceTree = "<group>";
 		};

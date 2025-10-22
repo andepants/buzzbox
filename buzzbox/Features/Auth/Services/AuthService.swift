@@ -101,6 +101,11 @@ final class AuthService: ObservableObject {
             let authResult = try await auth.createUser(withEmail: email, password: password)
             let uid = authResult.user.uid
 
+            // 3a. Update Firebase Auth profile with displayName (recommended by Firebase)
+            let changeRequest = authResult.user.createProfileChangeRequest()
+            changeRequest.displayName = displayName
+            try await changeRequest.commitChanges()
+
             // 4. Reserve displayName in Firestore (for uniqueness)
             try await displayNameService.reserveDisplayName(displayName, userId: uid)
 
@@ -239,6 +244,22 @@ final class AuthService: ObservableObject {
             let photoURL = data["photoURL"] as? String
             let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
 
+            // 5a. Sync displayName to Firebase Auth profile if it differs
+            if authResult.user.displayName != displayName {
+                let changeRequest = authResult.user.createProfileChangeRequest()
+                changeRequest.displayName = displayName
+                try await changeRequest.commitChanges()
+            }
+
+            // 5b. Sync photoURL to Firebase Auth profile if it differs
+            if let photoURL = photoURL, let url = URL(string: photoURL) {
+                if authResult.user.photoURL?.absoluteString != photoURL {
+                    let changeRequest = authResult.user.createProfileChangeRequest()
+                    changeRequest.photoURL = url
+                    try await changeRequest.commitChanges()
+                }
+            }
+
             // 6. Create User object
             let user = User(
                 id: uid,
@@ -371,6 +392,22 @@ final class AuthService: ObservableObject {
         let displayName = data["displayName"] as? String ?? ""
         let photoURL = data["photoURL"] as? String
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+
+        // 6a. Sync displayName to Firebase Auth profile if it differs
+        if firebaseUser.displayName != displayName {
+            let changeRequest = firebaseUser.createProfileChangeRequest()
+            changeRequest.displayName = displayName
+            try await changeRequest.commitChanges()
+        }
+
+        // 6b. Sync photoURL to Firebase Auth profile if it differs
+        if let photoURL = photoURL, let url = URL(string: photoURL) {
+            if firebaseUser.photoURL?.absoluteString != photoURL {
+                let changeRequest = firebaseUser.createProfileChangeRequest()
+                changeRequest.photoURL = url
+                try await changeRequest.commitChanges()
+            }
+        }
 
         // 7. Create User object
         let user = User(
@@ -536,7 +573,24 @@ final class AuthService: ObservableObject {
             }
         }
 
-        // 2. Prepare update data
+        // 2. Update Firebase Auth profile first (source of truth for Auth)
+        let changeRequest = currentUser.createProfileChangeRequest()
+        var profileUpdated = false
+
+        if let displayName = displayName {
+            changeRequest.displayName = displayName
+            profileUpdated = true
+        }
+        if let photoURL = photoURL {
+            changeRequest.photoURL = photoURL
+            profileUpdated = true
+        }
+
+        if profileUpdated {
+            try await changeRequest.commitChanges()
+        }
+
+        // 3. Prepare update data for Firestore
         var updateData: [String: Any] = [:]
         if let displayName = displayName {
             updateData["displayName"] = displayName
@@ -545,10 +599,10 @@ final class AuthService: ObservableObject {
             updateData["photoURL"] = photoURL.absoluteString
         }
 
-        // 3. Update Firestore user document
+        // 4. Update Firestore user document
         try await firestore.collection("users").document(uid).updateData(updateData)
 
-        // 4. Update Realtime Database user profile
+        // 5. Update Realtime Database user profile
         var rtdbUpdateData: [String: Any] = [:]
         if let displayName = displayName {
             rtdbUpdateData["displayName"] = displayName
@@ -561,7 +615,7 @@ final class AuthService: ObservableObject {
         let userRef = database.child("users").child(uid)
         try await userRef.updateChildValues(rtdbUpdateData)
 
-        // 5. Update local SwiftData UserEntity
+        // 6. Update local SwiftData UserEntity
         let descriptor = FetchDescriptor<UserEntity>(
             predicate: #Predicate { $0.id == uid }
         )
@@ -575,7 +629,7 @@ final class AuthService: ObservableObject {
             try modelContext.save()
         }
 
-        // 6. Update published currentUser
+        // 7. Update published currentUser
         if let user = self.currentUser {
             self.currentUser = User(
                 id: user.id,
