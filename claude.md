@@ -15,10 +15,21 @@ BundleID: com.theheimlife.buzzbox
 
 DO NOT USE .dev this project is always in production.
 
-**Type:** iOS Native Messaging App with AI Features
+**Type:** Single-Creator Fan Engagement Platform with AI
+**Creator:** Andrew Heim Dev (andrewsheim@gmail.com)
 **Timeline:** 7-day sprint (24hr MVP, 4-day Early, 7-day Final)
 **Target:** iOS 17+ with Swift 6
 **Deployment:** TestFlight
+
+## Product Model
+
+**Architecture:** Single-Creator Platform (Discord-style)
+- **ONE creator:** Andrew Heim Dev (hardcoded)
+- **Fans/Members:** All other users who join Andrew's community
+- **Channels:** Topic-based group discussions (#general, #announcements, #off-topic)
+- **DMs:** Fans can message Andrew (AI-powered creator inbox)
+- **Auth:** Email only (no verification), no phone auth
+- **Scale:** Optimized for 10-50 fans (small engaged community)
 
 ## Tech Stack (Non-Negotiable)
 
@@ -32,6 +43,12 @@ DO NOT USE .dev this project is always in production.
 ### Firebase Database Strategy (Critical)
 - **Realtime Database:** ALL real-time features (chat messages, typing indicators, user presence)
 - **Firestore:** Static/profile data only (user profiles, settings)
+
+### Authentication Strategy
+- **Firebase Email/Password Auth:** No email verification required (production-first)
+- **Creator Identification:** Hardcoded email (andrewsheim@gmail.com) = creator type
+- **Dev Mode:** Auto-login button for quick testing (debug builds only)
+- **User Types:** Automatic assignment (creator vs fan) based on email
 
 ### Required SPM Dependencies
 - Firebase iOS SDK 10.20+ (Auth, Firestore, Realtime Database, Messaging, Storage)

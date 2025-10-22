@@ -1,4 +1,10 @@
-# Sorted
+# Buzzbox (Sorted)
+## Single-Creator Fan Engagement Platform with AI
+
+**Implementation Note:** This project implements the Content Creator/Influencer persona as a **single-creator platform** rather than a multi-creator marketplace. The app is built for ONE creator (Andrew Heim Dev) managing their fan community, similar to a personal Discord server or Telegram channel.
+
+---
+
 ## Building Cross-Platform Messaging Apps with AI Features
 
 ## Background
