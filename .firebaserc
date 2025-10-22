@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "default": "buzzbox-91c9a"
+  },
   "targets": {},
   "etags": {}
 }

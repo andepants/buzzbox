@@ -17,10 +17,12 @@ import FirebaseDatabase
 /// Main entry point for the Buzzbox app
 /// Configured for Swift 6, iOS 17+, with SwiftData persistence
 /// [Source: Epic 1, Story 1.3 - Added RootView and scenePhase handling]
+/// [Source: Story 2.0B, 3.7 - Added AppDelegate for push notifications]
 @main
 struct buzzboxApp: App {
     // MARK: - Properties
 
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastActiveDate = Date()
     @State private var showPrivacyOverlay = false
