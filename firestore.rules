@@ -28,16 +28,20 @@ service cloud.firestore {
     }
 
     // ============================================
-    // USERS COLLECTION (Private)
+    // USERS COLLECTION (User Discovery Enabled)
     // ============================================
-    // Full user profiles - PRIVATE, only accessible by the owner
+    // User profiles - Readable by all authenticated users for discovery
+    // Writable only by the owner
 
     match /users/{userId} {
-      // Users can only read their own profile
-      allow read: if request.auth != null && request.auth.uid == userId;
+      // Allow authenticated users to list and read user profiles for discovery
+      allow list, get: if request.auth != null;
 
-      // Users can only write their own profile
-      allow write: if request.auth != null && request.auth.uid == userId;
+      // Users can only update/delete their own profile
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+
+      // Users can only create their own profile
+      allow create: if request.auth != null && request.auth.uid == userId;
     }
 
     // ============================================

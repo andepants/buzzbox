@@ -43,6 +43,9 @@ struct SignUpView: View {
             }
             .navigationTitle("Sign Up")
             .navigationBarTitleDisplayMode(.large)
+            .onAppear {
+                viewModel.resetSignUpFields()
+            }
             .alert("Error", isPresented: .constant(viewModel.errorMessage != nil)) {
                 Button("OK") {
                     viewModel.errorMessage = nil

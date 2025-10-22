@@ -63,6 +63,20 @@
     },
 
     // ============================================
+    // USERS (Profile data for conversation validation)
+    // ============================================
+    // Structure: /users/{uid}
+    "users": {
+      "$uid": {
+        // Anyone authenticated can read user profiles
+        ".read": "auth != null",
+
+        // Only the user can write their own profile
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+
+    // ============================================
     // DEFAULT DENY ALL
     // ============================================
     ".read": false,

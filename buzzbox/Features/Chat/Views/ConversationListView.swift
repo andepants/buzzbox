@@ -28,6 +28,7 @@ struct ConversationListView: View {
     @State private var viewModel: ConversationViewModel?
     @State private var showRecipientPicker = false
     @State private var showGroupCreation = false
+    @State private var showProfile = false
     @State private var searchText = ""
     @EnvironmentObject var networkMonitor: NetworkMonitor
 
@@ -71,6 +72,10 @@ struct ConversationListView: View {
             .navigationTitle("Messages")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    profileButton
+                }
+
+                ToolbarItem(placement: .topBarLeading) {
                     newGroupButton
                 }
 
@@ -98,10 +103,25 @@ struct ConversationListView: View {
             .sheet(isPresented: $showGroupCreation) {
                 GroupCreationView()
             }
+            .sheet(isPresented: $showProfile) {
+                ProfileView()
+            }
         }
     }
 
     // MARK: - Subviews
+
+    private var profileButton: some View {
+        Button {
+            showProfile = true
+        } label: {
+            Image(systemName: "person.crop.circle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.blue)
+        }
+        .accessibilityLabel("Profile")
+        .accessibilityHint("View and edit your profile")
+    }
 
     private var newGroupButton: some View {
         Button {

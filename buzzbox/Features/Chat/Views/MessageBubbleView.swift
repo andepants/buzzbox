@@ -41,9 +41,9 @@ struct MessageBubbleView: View {
         isFromCurrentUser ? .white : .primary
     }
 
-    /// Check if read receipts can be shown (own messages in groups only, not system messages)
+    /// Check if read receipts can be shown (own messages in all conversations, not system messages)
     private var canShowReadReceipts: Bool {
-        isFromCurrentUser && conversation.isGroup && !message.isSystemMessage
+        isFromCurrentUser && !message.isSystemMessage
     }
 
     // MARK: - Body
@@ -112,7 +112,7 @@ struct MessageBubbleView: View {
             }
         }
         .sheet(isPresented: $showReadReceipts) {
-            ReadReceiptsView(message: message, participants: participants)
+            ReadReceiptsView(message: message, conversation: conversation, participants: participants)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)

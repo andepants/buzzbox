@@ -20,6 +20,9 @@ enum AuthError: LocalizedError {
     case wrongPassword
     case userDisabled
     case tooManyRequests
+    case databasePermissionDenied
+    case databaseWriteFailed(String)
+    case databaseNetworkError
     case unknownError(String)
 
     /// User-friendly error description
@@ -49,6 +52,12 @@ enum AuthError: LocalizedError {
             return "This account has been disabled. Please contact support"
         case .tooManyRequests:
             return "Too many failed login attempts. Please try again later"
+        case .databasePermissionDenied:
+            return "Server configuration issue detected. Our team has been notified. Please try again in a few moments."
+        case .databaseWriteFailed(let details):
+            return "Failed to save your data. Please check your connection and try again."
+        case .databaseNetworkError:
+            return "Network error while connecting to server. Please check your connection."
         case .unknownError(let message):
             return message
         }

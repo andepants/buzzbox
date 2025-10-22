@@ -326,14 +326,42 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Form Reset
+
+    /// Resets login form fields
+    func resetLoginFields() {
+        email = ""
+        password = ""
+        errorMessage = nil
+        showError = false
+    }
+
+    /// Resets sign up form fields
+    func resetSignUpFields() {
+        email = ""
+        password = ""
+        confirmPassword = ""
+        displayName = ""
+        errorMessage = nil
+        showError = false
+        displayNameAvailability = .unknown
+    }
+
     // MARK: - Logout
 
-    /// Logs out current user
-    func logout() async {
+    /// Logs out current user and clears ALL data
+    /// - Parameter modelContext: SwiftData ModelContext for clearing local data
+    func logout(modelContext: ModelContext) async {
+        print("🔵 [AUTH-VM] Starting logout with data cleanup...")
+
         do {
+            // 1. Clear all SwiftData entities
+            await clearAllLocalData(modelContext: modelContext)
+
+            // 2. Call AuthService.signOut() for Firebase/Keychain cleanup
             try await authService.signOut()
 
-            // Reset all published properties
+            // 3. Reset all published properties
             isAuthenticated = false
             currentUser = nil
             email = ""
@@ -346,6 +374,8 @@ final class AuthViewModel: ObservableObject {
             displayNameAvailability = .unknown
             loginAttemptCount = 0
 
+            print("✅ [AUTH-VM] Logout completed successfully")
+
             // Haptic feedback
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
 
@@ -355,8 +385,44 @@ final class AuthViewModel: ObservableObject {
                 argument: "You have been logged out"
             )
         } catch {
-            errorMessage = error.localizedDescription
+            print("🔴 [AUTH-VM] Logout error: \(error)")
+            errorMessage = "Logout encountered an issue, but local data was cleared"
             showError = true
+        }
+    }
+
+    /// Clear all SwiftData entities on logout
+    /// - Parameter modelContext: SwiftData ModelContext
+    private func clearAllLocalData(modelContext: ModelContext) async {
+        print("🔵 [AUTH-VM] Clearing all SwiftData entities...")
+
+        do {
+            // Delete all UserEntity records
+            try modelContext.delete(model: UserEntity.self)
+            print("   ✓ Deleted UserEntity records")
+
+            // Delete all ConversationEntity records
+            try modelContext.delete(model: ConversationEntity.self)
+            print("   ✓ Deleted ConversationEntity records")
+
+            // Delete all MessageEntity records
+            try modelContext.delete(model: MessageEntity.self)
+            print("   ✓ Deleted MessageEntity records")
+
+            // Delete all FAQEntity records
+            try modelContext.delete(model: FAQEntity.self)
+            print("   ✓ Deleted FAQEntity records")
+
+            // Delete all AttachmentEntity records
+            try modelContext.delete(model: AttachmentEntity.self)
+            print("   ✓ Deleted AttachmentEntity records")
+
+            try modelContext.save()
+
+            print("✅ [AUTH-VM] All SwiftData entities deleted")
+        } catch {
+            print("🔴 [AUTH-VM] Failed to clear SwiftData: \(error)")
+            // Non-critical error, continue logout
         }
     }
 }

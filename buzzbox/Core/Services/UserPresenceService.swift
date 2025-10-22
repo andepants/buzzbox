@@ -168,6 +168,19 @@ final class UserPresenceService {
 
     // MARK: - Cleanup
 
+    /// Remove all active presence listeners (call on logout)
+    func removeAllListeners() async {
+        print("🔵 [PRESENCE] Removing all active listeners...")
+
+        for (userID, handle) in presenceListeners {
+            database.child("userPresence/\(userID)").removeObserver(withHandle: handle)
+            print("   ✓ Removed listener for user: \(userID)")
+        }
+
+        presenceListeners.removeAll()
+        print("✅ [PRESENCE] All listeners removed (\(presenceListeners.count) listeners cleared)")
+    }
+
     deinit {
         // Cleanup all listeners
         for (userID, handle) in presenceListeners {

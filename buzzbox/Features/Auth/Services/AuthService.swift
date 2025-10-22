@@ -85,8 +85,11 @@ final class AuthService: ObservableObject {
         displayName: String,
         modelContext: ModelContext
     ) async throws -> User {
+        print("🔵 [AUTH] Starting sign-up for email: \(email), displayName: \(displayName)")
+
         // 1. Validate displayName format (client-side)
         guard isValidDisplayName(displayName) else {
+            print("🔴 [AUTH] Sign-up failed: Invalid display name format")
             throw AuthError.invalidDisplayName
         }
 
@@ -119,6 +122,7 @@ final class AuthService: ObservableObject {
             try await firestore.collection("users").document(uid).setData(userData)
 
             // 6. Create user profile in Realtime Database (for conversation validation)
+            print("🔵 [AUTH] Creating user profile in RTDB...")
             let userRef = database.child("users").child(uid)
             try await userRef.setValue([
                 "email": email,
@@ -126,6 +130,7 @@ final class AuthService: ObservableObject {
                 "profilePictureURL": "",
                 "createdAt": ServerValue.timestamp()
             ])
+            print("✅ [AUTH] User profile created in RTDB")
 
             // 7. Initialize user presence in Realtime Database
             let presenceRef = database.child("userPresence").child(uid)
@@ -158,10 +163,19 @@ final class AuthService: ObservableObject {
             self.currentUser = user
             self.isAuthenticated = true
 
+            print("✅ [AUTH] Sign-up successful for uid: \(uid)")
             return user
 
         } catch let error as NSError {
-            // Map Firebase errors to AuthError
+            print("🔴 [AUTH] Sign-up failed: \(error.localizedDescription)")
+
+            // Check if this is a Database error
+            if error.domain == "FirebaseDatabase" ||
+               error.localizedDescription.contains("permission_denied") {
+                throw mapDatabaseError(error)
+            }
+
+            // Map Firebase Auth errors to AuthError
             throw mapFirebaseError(error)
         }
     }
@@ -219,10 +233,13 @@ final class AuthService: ObservableObject {
         password: String,
         modelContext: ModelContext
     ) async throws -> User {
+        print("🔵 [AUTH] Starting sign-in for email: \(email)")
+
         do {
             // 1. Sign in with Firebase Auth
             let authResult = try await auth.signIn(withEmail: email, password: password)
             let uid = authResult.user.uid
+            print("🔵 [AUTH] Firebase Auth successful for uid: \(uid)")
 
             // 2. Get ID token for Keychain storage
             let idToken = try await authResult.user.getIDToken()
@@ -294,6 +311,7 @@ final class AuthService: ObservableObject {
             try modelContext.save()
 
             // 8. Ensure user exists in Realtime Database (for conversation validation)
+            print("🔵 [AUTH] Writing user profile to RTDB...")
             let userRef = database.child("users").child(uid)
             try await userRef.setValue([
                 "email": userEmail,
@@ -301,6 +319,7 @@ final class AuthService: ObservableObject {
                 "profilePictureURL": photoURL ?? "",
                 "updatedAt": ServerValue.timestamp()
             ])
+            print("✅ [AUTH] User profile written to RTDB")
 
             // 9. Update user presence in Realtime Database
             let presenceRef = database.child("userPresence").child(uid)
@@ -313,10 +332,19 @@ final class AuthService: ObservableObject {
             self.currentUser = user
             self.isAuthenticated = true
 
+            print("✅ [AUTH] Sign-in successful for uid: \(uid)")
             return user
 
         } catch let error as NSError {
-            // Map Firebase errors to AuthError
+            print("🔴 [AUTH] Sign-in failed: \(error.localizedDescription)")
+
+            // Check if this is a Database error
+            if error.domain == "FirebaseDatabase" ||
+               error.localizedDescription.contains("permission_denied") {
+                throw mapDatabaseError(error)
+            }
+
+            // Otherwise, map as Auth error
             throw mapFirebaseError(error)
         }
     }
@@ -353,6 +381,30 @@ final class AuthService: ObservableObject {
         }
     }
 
+    /// Map Firebase Database errors to custom AuthError
+    /// - Parameter error: Error from Firebase Realtime Database
+    /// - Returns: Mapped AuthError
+    private func mapDatabaseError(_ error: Error) -> AuthError {
+        let nsError = error as NSError
+
+        // Log for developers
+        print("🔴 [AUTH-DB-ERROR] \(nsError.domain) | Code: \(nsError.code)")
+        print("   Description: \(nsError.localizedDescription)")
+        print("   User Info: \(nsError.userInfo)")
+
+        // Check for permission_denied
+        if nsError.localizedDescription.contains("permission_denied") {
+            return .databasePermissionDenied
+        }
+
+        // Check for network errors
+        if nsError.domain == NSURLErrorDomain {
+            return .databaseNetworkError
+        }
+
+        return .databaseWriteFailed(nsError.localizedDescription)
+    }
+
     // MARK: - Auto Login
 
     /// Attempts auto-login using stored Keychain token
@@ -360,9 +412,12 @@ final class AuthService: ObservableObject {
     /// - Returns: User object if auto-login successful, nil if no valid token
     /// - Throws: AuthError if token exists but is invalid
     func autoLogin(modelContext: ModelContext) async throws -> User? {
+        print("🔵 [AUTH] Attempting auto-login...")
+
         // 1. Check Keychain for stored token
         let keychainService = KeychainService()
         guard let token = keychainService.retrieve() else {
+            print("⚠️ [AUTH] No token found in Keychain, auto-login skipped")
             return nil // No token stored, user needs to login
         }
 
@@ -443,6 +498,7 @@ final class AuthService: ObservableObject {
         try modelContext.save()
 
         // 9. Ensure user exists in Realtime Database (for conversation validation)
+        print("🔵 [AUTH] Syncing user profile to RTDB...")
         let userRef = database.child("users").child(uid)
         try await userRef.setValue([
             "email": email,
@@ -450,6 +506,7 @@ final class AuthService: ObservableObject {
             "profilePictureURL": photoURL ?? "",
             "updatedAt": ServerValue.timestamp()
         ])
+        print("✅ [AUTH] User profile synced to RTDB")
 
         // 10. Update user presence in Realtime Database
         let presenceRef = database.child("userPresence").child(uid)
@@ -462,6 +519,7 @@ final class AuthService: ObservableObject {
         self.currentUser = user
         self.isAuthenticated = true
 
+        print("✅ [AUTH] Auto-login successful for uid: \(uid)")
         return user
     }
 
@@ -505,24 +563,45 @@ final class AuthService: ObservableObject {
     /// Signs out user and cleans up local data
     /// - Throws: AuthError if sign out fails
     func signOut() async throws {
-        // 1. Sign out from Firebase Auth
+        print("🔵 [AUTH] Starting sign-out...")
+
+        // 1. Set user offline in Realtime Database (Firebase best practice)
+        await UserPresenceService.shared.setOffline()
+        print("✅ [AUTH] User presence set to offline")
+
+        // 2. Remove all Firebase listeners
+        await UserPresenceService.shared.removeAllListeners()
+        print("✅ [AUTH] Firebase listeners removed")
+
+        // 3. Sign out from Firebase Auth
         do {
             try auth.signOut()
+            print("✅ [AUTH] Firebase Auth sign-out successful")
         } catch {
+            print("🔴 [AUTH] Firebase sign-out failed: \(error)")
             throw mapFirebaseError(error as NSError)
         }
 
-        // 2. Delete auth token from Keychain
+        // 4. Delete auth token from Keychain
         let keychainService = KeychainService()
-        try keychainService.delete()
+        do {
+            try keychainService.delete()
+            print("✅ [AUTH] Keychain token deleted")
+        } catch {
+            print("⚠️ [AUTH] Keychain deletion failed (non-critical): \(error)")
+            // Continue cleanup even if Keychain fails
+        }
 
-        // 3. Clear Kingfisher image cache
+        // 5. Clear Kingfisher image cache
         KingfisherManager.shared.cache.clearMemoryCache()
         KingfisherManager.shared.cache.clearDiskCache()
+        print("✅ [AUTH] Kingfisher cache cleared")
 
-        // 4. Update published state
+        // 6. Update published state
         self.currentUser = nil
         self.isAuthenticated = false
+
+        print("✅ [AUTH] Sign-out completed successfully")
     }
 
     // MARK: - Profile Management

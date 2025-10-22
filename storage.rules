@@ -1,0 +1,84 @@
+rules_version = '2';
+
+// Firebase Storage Security Rules for BuzzBox
+// [Source: Story 3.8 - User Discovery & Profile Access]
+//
+// Manages access control for:
+// - Profile pictures: User photos displayed in profiles and chat lists
+// - Group photos: Photos for group conversations
+//
+// Security Model:
+// - All operations require authentication
+// - Profile photos: Owner can write, all authenticated users can read
+// - Group photos: All authenticated users can read/write (MVP - verify membership in production)
+// - File validation: Images only, 5MB max size
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    /// Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    /// Check if uploaded file is an image (jpeg, png, gif, webp)
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    /// Check if file size is within 5MB limit (matches StorageService.swift validation)
+    function isValidSize() {
+      return request.resource.size <= 5 * 1024 * 1024; // 5MB
+    }
+
+    // ============================================
+    // PROFILE PICTURES
+    // ============================================
+    // Structure: /profile_pictures/{userId}/profile.jpg
+    // Used by: ProfileViewModel, StorageService
+
+    match /profile_pictures/{userId}/{fileName} {
+      // Allow all authenticated users to read profile pictures
+      // (Required for viewing user profiles in RecipientPicker, ConversationList, etc.)
+      allow read: if isAuthenticated();
+
+      // Allow users to write ONLY their own profile picture
+      allow write: if isAuthenticated()
+                   && request.auth.uid == userId
+                   && isImage()
+                   && isValidSize();
+    }
+
+    // ============================================
+    // GROUP PHOTOS
+    // ============================================
+    // Structure: /group_photos/{groupId}/photo.jpg
+    // Used by: EditGroupInfoView, StorageService
+
+    match /group_photos/{groupId}/{fileName} {
+      // Allow all authenticated users to read group photos
+      // (Required for viewing group photos in ConversationList, GroupInfo, etc.)
+      allow read: if isAuthenticated();
+
+      // Allow authenticated users to write group photos
+      // TODO (Production): Verify user is a group member before allowing write
+      // For MVP, allowing all authenticated users simplifies implementation
+      allow write: if isAuthenticated()
+                   && isImage()
+                   && isValidSize();
+    }
+
+    // ============================================
+    // DEFAULT DENY ALL
+    // ============================================
+    // Explicitly deny access to any other storage paths
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

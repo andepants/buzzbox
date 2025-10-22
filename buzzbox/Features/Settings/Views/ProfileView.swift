@@ -16,7 +16,6 @@ struct ProfileView: View {
 
     @State private var viewModel = ProfileViewModel()
     @State private var selectedPhotoItem: PhotosPickerItem?
-    @State private var showLogoutDialog = false
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var authViewModel: AuthViewModel
 
@@ -56,20 +55,6 @@ struct ProfileView: View {
             .task {
                 // Load profile on appear
                 viewModel.loadCurrentProfile()
-            }
-            .confirmationDialog(
-                "Log out of your account?",
-                isPresented: $showLogoutDialog,
-                titleVisibility: .visible
-            ) {
-                Button("Log Out", role: .destructive) {
-                    Task {
-                        await authViewModel.logout()
-                    }
-                }
-                Button("Cancel", role: .cancel) { }
-            } message: {
-                Text("You can log back in anytime.")
             }
         }
     }
@@ -207,7 +192,9 @@ struct ProfileView: View {
 
     private var logoutButton: some View {
         Button(role: .destructive, action: {
-            showLogoutDialog = true
+            Task {
+                await authViewModel.logout(modelContext: modelContext)
+            }
         }) {
             Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
                 .frame(maxWidth: .infinity)

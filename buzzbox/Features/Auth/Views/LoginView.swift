@@ -50,10 +50,16 @@ struct LoginView: View {
                 .padding(.vertical, 40)
             }
             .navigationBarHidden(true)
-            .alert("Login Failed", isPresented: $viewModel.showError) {
-                Button("OK", role: .cancel) { }
+            .onAppear {
+                viewModel.resetLoginFields()
+            }
+            .alert(errorTitle, isPresented: $viewModel.showError) {
+                Button(primaryActionText) {
+                    handlePrimaryAction()
+                }
+                Button("Cancel", role: .cancel) { }
             } message: {
-                Text(viewModel.errorMessage ?? "Unknown error occurred")
+                Text(errorMessage)
             }
             .onChange(of: viewModel.isAuthenticated) { _, isAuthenticated in
                 if isAuthenticated {
@@ -260,6 +266,56 @@ struct LoginView: View {
     /// Check if login form is valid
     private var isFormValid: Bool {
         !viewModel.email.isEmpty && !viewModel.password.isEmpty
+    }
+
+    // MARK: - Error Handling Helpers
+
+    /// Get appropriate error title based on error message
+    private var errorTitle: String {
+        guard let error = viewModel.errorMessage else { return "Error" }
+
+        if error.contains("password") || error.contains("Password") {
+            return "Incorrect Password"
+        } else if error.contains("connection") || error.contains("network") || error.contains("Network") {
+            return "Connection Issue"
+        } else if error.contains("Server") || error.contains("configuration") {
+            return "Server Issue"
+        } else if error.contains("disabled") {
+            return "Account Disabled"
+        } else {
+            return "Login Failed"
+        }
+    }
+
+    /// Get error message text
+    private var errorMessage: String {
+        viewModel.errorMessage ?? "An unexpected error occurred"
+    }
+
+    /// Get primary action button text based on error type
+    private var primaryActionText: String {
+        guard let error = viewModel.errorMessage else { return "OK" }
+
+        if error.contains("password") || error.contains("Password") {
+            return "Reset Password"
+        } else if error.contains("connection") || error.contains("network") || error.contains("Network") {
+            return "Retry"
+        } else {
+            return "OK"
+        }
+    }
+
+    /// Handle primary action based on error type
+    private func handlePrimaryAction() {
+        guard let error = viewModel.errorMessage else { return }
+
+        if error.contains("password") || error.contains("Password") {
+            showForgotPassword = true
+        } else if error.contains("connection") || error.contains("network") || error.contains("Network") {
+            Task {
+                await viewModel.login(modelContext: modelContext)
+            }
+        }
     }
 }
 

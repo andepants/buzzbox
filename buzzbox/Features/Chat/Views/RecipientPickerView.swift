@@ -8,6 +8,8 @@
 
 import SwiftUI
 import SwiftData
+import FirebaseAuth
+import FirebaseFirestore
 
 /// View for selecting a recipient to start a new conversation
 struct RecipientPickerView: View {
@@ -132,21 +134,47 @@ struct RecipientPickerView: View {
 
     // MARK: - Helper Methods
 
-    /// Load users from Firestore/SwiftData
-    /// TODO: Filter out blocked users and existing conversations
+    /// Load users from Firestore
+    /// Filters out current user and fetches all other users for discovery
     private func loadUsers() async {
         isLoading = true
         defer { isLoading = false }
 
-        // For MVP: Load users from local SwiftData
-        // In production: Fetch from Firestore and filter blocked users
-        let descriptor = FetchDescriptor<UserEntity>()
+        guard let currentUserID = Auth.auth().currentUser?.uid else {
+            print("❌ No authenticated user")
+            return
+        }
 
         do {
-            users = try modelContext.fetch(descriptor)
-            print("✅ Loaded \(users.count) users")
+            let snapshot = try await Firestore.firestore()
+                .collection("users")
+                .getDocuments()
+
+            var fetchedUsers: [UserEntity] = []
+
+            for document in snapshot.documents {
+                let data = document.data()
+                let userID = document.documentID
+
+                // Filter out current user
+                guard userID != currentUserID else { continue }
+
+                let user = UserEntity(
+                    id: userID,
+                    email: data["email"] as? String ?? "",
+                    displayName: data["displayName"] as? String ?? "Unknown",
+                    photoURL: data["profilePictureURL"] as? String
+                )
+
+                fetchedUsers.append(user)
+            }
+
+            // Sort by display name
+            users = fetchedUsers.sorted { $0.displayName < $1.displayName }
+            print("✅ Loaded \(users.count) users from Firestore")
+
         } catch {
-            print("❌ Failed to load users: \(error)")
+            print("❌ Failed to load users from Firestore: \(error)")
             users = []
         }
     }
