@@ -153,8 +153,9 @@ struct GroupInfoView: View {
             Text("You are the last admin. Please transfer admin rights to another member before leaving, or the oldest member will automatically become admin.")
         }
         .sheet(isPresented: $showEditSheet) {
-            Text("Edit Group - Coming in Story 3.4")
-                .padding()
+            NavigationStack {
+                EditGroupInfoView(conversation: conversation)
+            }
         }
         .sheet(isPresented: $showAddParticipants) {
             AddParticipantsView(conversation: conversation)
