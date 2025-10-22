@@ -172,6 +172,43 @@ final class MessageThreadViewModel {
         try? modelContext.save()
     }
 
+    /// Retry sending a failed message
+    func retryFailedMessage(_ message: MessageEntity) async {
+        // Reset sync status to pending
+        message.syncStatus = .pending
+        message.retryCount = 0
+        message.syncError = nil
+        message.lastSyncAttempt = Date()
+        try? modelContext.save()
+
+        // Re-attempt sync to RTDB
+        do {
+            let messageData: [String: Any] = [
+                "senderID": message.senderID,
+                "text": message.text,
+                "serverTimestamp": ServerValue.timestamp(),
+                "status": message.status.rawValue
+            ]
+
+            try await messagesRef.child(message.id).setValue(messageData)
+
+            // Mark as synced
+            message.syncStatus = .synced
+            try? modelContext.save()
+
+            // Update conversation last message
+            await updateConversationLastMessage(text: message.text)
+
+        } catch {
+            // Mark as failed again
+            message.syncStatus = .failed
+            message.syncError = error.localizedDescription
+            message.retryCount += 1
+            self.error = error
+            try? modelContext.save()
+        }
+    }
+
     // MARK: - Private Methods
 
     private func handleIncomingMessage(_ snapshot: DataSnapshot) async {

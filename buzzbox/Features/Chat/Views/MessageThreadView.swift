@@ -70,8 +70,15 @@ struct MessageThreadView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(messages) { message in
-                            MessageBubbleView(message: message)
-                                .id(message.id)
+                            MessageBubbleView(
+                                message: message,
+                                onRetry: { failedMessage in
+                                    Task {
+                                        await viewModel.retryFailedMessage(failedMessage)
+                                    }
+                                }
+                            )
+                            .id(message.id)
                         }
                     }
                     .padding()

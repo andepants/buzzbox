@@ -1,89 +1,181 @@
 /// MessageBubbleView.swift
 ///
-/// Displays a single message bubble with text, timestamp, and status indicators.
-/// Shows different styles for sent vs received messages.
+/// Displays a single message bubble with WhatsApp-style delivery status indicators.
+/// Features smooth animations, retry functionality, and comprehensive accessibility.
 ///
 /// Created: 2025-10-21
 /// [Source: Story 2.3 - Send and Receive Messages]
+/// [Updated: Story 2.4 - Message Delivery Status Indicators]
 
 import SwiftUI
 import FirebaseAuth
 
-/// Message bubble view for displaying individual messages
+/// Message bubble view with WhatsApp-style status indicators
 struct MessageBubbleView: View {
     // MARK: - Properties
 
     let message: MessageEntity
 
+    /// Optional retry handler for failed messages (provided by parent view)
+    var onRetry: ((MessageEntity) -> Void)? = nil
+
     // MARK: - Computed Properties
 
-    private var isCurrentUser: Bool {
+    /// Check if message is from current user
+    private var isFromCurrentUser: Bool {
         message.senderID == Auth.auth().currentUser?.uid
     }
 
+    /// Bubble background color
     private var bubbleColor: Color {
-        isCurrentUser ? .blue : Color(.systemGray5)
+        isFromCurrentUser ? .blue : Color(.systemGray5)
     }
 
+    /// Text color based on sender
     private var textColor: Color {
-        isCurrentUser ? .white : .primary
-    }
-
-    private var statusIcon: String? {
-        switch message.syncStatus {
-        case .pending:
-            return "clock"
-        case .synced:
-            return "checkmark"
-        case .failed:
-            return "exclamationmark.triangle"
-        }
+        isFromCurrentUser ? .white : .primary
     }
 
     // MARK: - Body
 
     var body: some View {
         HStack {
-            if isCurrentUser {
-                Spacer()
-            }
+            if isFromCurrentUser { Spacer(minLength: 60) }
 
-            VStack(alignment: isCurrentUser ? .trailing : .leading, spacing: 4) {
-                // Message text
+            VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 4) {
+                // Message bubble
                 Text(message.text)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
                     .background(bubbleColor)
                     .foregroundColor(textColor)
-                    .cornerRadius(16)
-                    .accessibilityLabel("Message from \(isCurrentUser ? "you" : "sender")")
-                    .accessibilityValue(message.text)
+                    .cornerRadius(18)
 
-                // Timestamp and status
+                // Timestamp + status
                 HStack(spacing: 4) {
-                    Text(formatTimestamp(message.localCreatedAt))
-                        .font(.caption2)
+                    // Use server timestamp if available, fallback to local
+                    Text(message.serverTimestamp ?? message.localCreatedAt, style: .time)
+                        .font(.system(size: 12))
                         .foregroundColor(.secondary)
 
-                    if isCurrentUser, let icon = statusIcon {
-                        Image(systemName: icon)
-                            .font(.caption2)
-                            .foregroundColor(message.syncStatus == .failed ? .red : .secondary)
+                    if isFromCurrentUser {
+                        statusIcon
+                            .transition(.scale.combined(with: .opacity))
+                            .animation(.easeInOut(duration: 0.2), value: message.status)
+                            .animation(.easeInOut(duration: 0.2), value: message.syncStatus)
                     }
                 }
             }
 
-            if !isCurrentUser {
-                Spacer()
+            if !isFromCurrentUser { Spacer(minLength: 60) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
+    }
+
+    // MARK: - Status Icon
+
+    /// WhatsApp-style status icon with animations
+    @ViewBuilder
+    private var statusIcon: some View {
+        switch message.syncStatus {
+        case .pending:
+            // Sending - clock icon
+            Image(systemName: "clock")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .accessibilityLabel("Sending")
+
+        case .failed:
+            // Failed - show retry button
+            Button {
+                retryMessage()
+            } label: {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.red)
+            }
+            .accessibilityLabel("Failed to send. Tap to retry.")
+
+        case .synced:
+            // Successfully synced - show delivery status
+            switch message.status {
+            case .sending:
+                // Should not happen when synced, but handle gracefully
+                Image(systemName: "clock")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .accessibilityLabel("Sending")
+
+            case .sent:
+                // Sent to server - single checkmark
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .accessibilityLabel("Sent")
+
+            case .delivered:
+                // Delivered to recipient - double checkmark (gray)
+                HStack(spacing: 2) {
+                    Image(systemName: "checkmark")
+                    Image(systemName: "checkmark")
+                }
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .accessibilityLabel("Delivered")
+
+            case .read:
+                // Read by recipient - double checkmark (blue)
+                HStack(spacing: 2) {
+                    Image(systemName: "checkmark")
+                    Image(systemName: "checkmark")
+                }
+                .font(.system(size: 12))
+                .foregroundColor(.blue)
+                .accessibilityLabel("Read")
             }
         }
     }
 
+    // MARK: - Accessibility
+
+    /// VoiceOver description combining message text and status
+    private var accessibilityDescription: String {
+        var description = message.text
+
+        if isFromCurrentUser {
+            description += ", "
+            switch message.syncStatus {
+            case .pending:
+                description += "sending"
+            case .failed:
+                description += "failed to send, tap to retry"
+            case .synced:
+                switch message.status {
+                case .sending:
+                    description += "sending"
+                case .sent:
+                    description += "sent"
+                case .delivered:
+                    description += "delivered"
+                case .read:
+                    description += "read"
+                }
+            }
+        } else {
+            description += ", received"
+        }
+
+        return description
+    }
+
     // MARK: - Private Methods
 
-    private func formatTimestamp(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+    /// Retry sending failed message via parent view handler
+    private func retryMessage() {
+        // Call parent view's retry handler if provided
+        // This will be connected to MessageThreadViewModel.retryFailedMessage()
+        // or SyncCoordinator.shared.retryMessage() in Story 2.5
+        onRetry?(message)
     }
 }
