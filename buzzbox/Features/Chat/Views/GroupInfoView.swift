@@ -28,6 +28,8 @@ struct GroupInfoView: View {
     @State private var showAddParticipants = false
     @State private var showLeaveConfirmation = false
     @State private var showAdminTransferDialog = false
+    @State private var showMinimumParticipantWarning = false
+    @State private var participantToRemove: UserEntity?
     @State private var isLoading = false
     @State private var errorMessage: String?
 
@@ -155,8 +157,7 @@ struct GroupInfoView: View {
                 .padding()
         }
         .sheet(isPresented: $showAddParticipants) {
-            Text("Add Participants - Coming in Story 3.3")
-                .padding()
+            AddParticipantsView(conversation: conversation)
         }
         .overlay {
             if isLoading {
@@ -172,6 +173,15 @@ struct GroupInfoView: View {
             }
         } message: { message in
             Text(message)
+        }
+        .confirmationDialog(
+            "Cannot Remove Participant",
+            isPresented: $showMinimumParticipantWarning,
+            titleVisibility: .visible
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Groups must have at least 2 participants. Removing this participant would archive the group.")
         }
     }
 
@@ -305,6 +315,13 @@ struct GroupInfoView: View {
                 return
             }
 
+            // Check minimum participant count BEFORE removal
+            if conversation.participantIDs.count <= 2 {
+                print("⚠️ Cannot remove participant: minimum 2 participants required")
+                showMinimumParticipantWarning = true
+                return
+            }
+
             // Get admin name for system message
             let adminName = participants.first(where: { $0.id == currentUserID })?.displayName ?? "Admin"
 
@@ -319,6 +336,9 @@ struct GroupInfoView: View {
 
                 // Sync to RTDB
                 try await ConversationService.shared.syncConversation(conversation)
+
+                // Clean up typing indicator for removed participant
+                await cleanupTypingIndicator(for: participant.id)
 
                 // Send system message
                 let systemMessageText = "\(adminName) removed \(participant.displayName)"
@@ -336,6 +356,15 @@ struct GroupInfoView: View {
                 errorMessage = "Failed to remove participant"
             }
         }
+    }
+
+    /// Clean up typing indicator for removed participant
+    private func cleanupTypingIndicator(for userID: String) async {
+        await TypingIndicatorService.shared.stopTyping(
+            conversationID: conversation.id,
+            userID: userID
+        )
+        print("✅ Cleaned up typing indicator for removed user: \(userID)")
     }
 
     /// Start listening to participant changes (auto-dismiss if removed)
