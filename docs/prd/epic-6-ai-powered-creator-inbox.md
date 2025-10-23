@@ -229,13 +229,13 @@ firebase functions:secrets:set OPENAI_API_KEY
 # Paste: sk-proj-your-actual-key-here
 ```
 
-**Step 5: Update `functions/package.json` for local .env support**
+**Step 5: Verify Firebase Functions dependencies**
+
+Check `functions/package.json` has correct versions:
 
 ```json
 {
   "scripts": {
-    "serve": "firebase emulators:start --only functions",
-    "shell": "firebase functions:shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
@@ -259,27 +259,16 @@ firebase functions:secrets:set OPENAI_API_KEY
 
 **Step 6: Define Creator UID constant**
 
-In each Cloud Function file, add:
+Creator UID is already configured in all Cloud Functions:
 ```typescript
 // Andrew's Firebase Auth UID (from Firebase Console > Authentication)
 const CREATOR_UID = 'UoLk9GtxDaaYGlI8Ah6RnCbXXbf2';
 ```
 
-**Local Development Testing:**
-
-```bash
-# Load environment variables and start emulator
-cd functions
-firebase emulators:start --only functions
-
-# Test that env vars are loaded
-# Check logs for successful OpenAI initialization
-```
-
 **Production Deployment:**
 
 ```bash
-# Deploy with secrets
+# Deploy Cloud Functions with secrets
 firebase deploy --only functions
 
 # Secrets are automatically available via process.env.OPENAI_API_KEY
@@ -287,9 +276,9 @@ firebase deploy --only functions
 
 **Important Notes:**
 - Never commit `.env` to git
-- Use `firebase functions:secrets:set` for production
-- Local `.env` file only works with Firebase Emulator
-- Production uses Firebase Secrets (not `.env`)
+- Production uses Firebase Secrets via `process.env`
+- All development and testing happens in production Firebase
+- Check function logs: `firebase functions:log`
 
 **Estimate:** 15 min
 
@@ -2258,55 +2247,55 @@ firebase emulators:start --only firestore
 
 ## 📦 Implementation Order
 
-### Phase 0: Environment Setup (15 min) - **DO THIS FIRST**
-1. Create `functions/.env` with OpenAI API key
-2. Create `functions/.env.example` for documentation
-3. Add `.env` to `.gitignore`
-4. Set production secrets: `firebase functions:secrets:set OPENAI_API_KEY`
-5. Define CREATOR_UID constant in all function files
+### Phase 0: Environment Setup (ALREADY DONE ✅)
+1. ✅ OpenAI API key configured via `firebase functions:secrets:set`
+2. ✅ Creator UID defined in all Cloud Functions: `UoLk9GtxDaaYGlI8Ah6RnCbXXbf2`
+3. ✅ Production Firebase project active
 
 ### Phase 1: Infrastructure (45 min)
-6. Initialize Firebase Cloud Functions
-7. Install OpenAI SDK and dependencies
-8. Configure `package.json` with correct versions
-9. Deploy test function
-10. Set up Firebase Emulator Suite with environment variables
+4. Initialize Firebase Cloud Functions (if not done)
+5. Install OpenAI SDK and dependencies: `cd functions && npm install`
+6. Configure `package.json` with correct versions
+7. Deploy test function to production
+8. Verify function logs: `firebase functions:log`
 
 ### Phase 2: Auto-Processing (2 hours)
-11. Write auto-processing Cloud Function (categorization + sentiment + scoring)
-12. Test with sample messages
-13. Update MessageEntity with AI fields
-14. Update RTDB sync to include AI metadata
-15. Add AI badges to MessageBubbleView
+9. Write auto-processing Cloud Function (categorization + sentiment + scoring)
+10. Deploy and test with real messages in production
+11. Update MessageEntity with AI fields
+12. Update RTDB sync to include AI metadata
+13. Add AI badges to MessageBubbleView
 
 ### Phase 3: FAQ Auto-Responder (2 hours)
-16. Create Firestore vector index for `faqs.embedding` field (CRITICAL - must wait 5-10 min for build)
-17. Create 10-15 FAQs in Firestore manually with keywords (use `/docs/data/faqs-preseed.json`)
-18. Write Cloud Function to generate FAQ embeddings (uses FieldValue.vector())
-19. Deploy and run generateFAQEmbeddings function
-20. Verify embeddings stored correctly in Firestore
-21. Write checkFAQ Cloud Function (uses native findNearest)
-22. Add AIService.checkFAQ() in iOS
-23. Integrate FAQ auto-response in message receiving
-24. Add AI-generated badge to UI
+14. Create Firestore vector index for `faqs.embedding` field (CRITICAL - must wait 5-10 min for build)
+15. Create 10-15 FAQs in Firestore manually with keywords (use `/docs/data/faqs-preseed.json`)
+16. Write Cloud Function to generate FAQ embeddings (uses FieldValue.vector())
+17. Deploy and run generateFAQEmbeddings function in production
+18. Verify embeddings stored correctly in Firestore Console
+19. Write checkFAQ Cloud Function (uses native findNearest)
+20. Deploy and test FAQ matching with real messages
+21. Add AIService.checkFAQ() in iOS
+22. Integrate FAQ auto-response in message receiving
+23. Add AI-generated badge to UI
 
-### Phase 4: Context-Aware Smart Replies (3 hours)
-25. Create creator profile in Firestore manually
-26. Write generateSmartReplies Cloud Function
-27. Test with conversation context fetching
-28. Create SmartReplyPickerView UI component
-29. Add "Draft Reply" button to MessageThreadView
-30. Test end-to-end with real conversations
+### Phase 4: Context-Aware Smart Replies (2 hours)
+24. Create creator profile in Firestore manually (use template from PRD)
+25. Write generateSmartReplies Cloud Function
+26. Deploy and test with real conversation context
+27. Create SmartReplyPickerView UI component
+28. Add "Draft Reply" button to MessageThreadView
+29. Test end-to-end with real production conversations
 
 ### Phase 5: Error Handling & Settings (1.5 hours)
-31. Add timeout and error handling to Cloud Functions
+30. Add timeout and error handling to Cloud Functions
+31. Deploy and test error scenarios in production
 32. Add graceful degradation to iOS
 33. Create AI Settings UI
 34. Wire up settings toggles
 
 ### Phase 6: Security & Polish (1 hour)
-35. Deploy Firestore security rules
-36. Test all 5 AI features end-to-end
+35. Deploy Firestore security rules to production
+36. Test all 5 AI features end-to-end in production
 37. Verify latency meets targets
 38. Test error handling (network failures, timeouts)
 39. Polish UI animations and loading states

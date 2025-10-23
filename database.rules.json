@@ -4,12 +4,16 @@
     // MESSAGES (Real-time chat)
     // ============================================
     // Structure: /messages/{conversationId}/{messageId}
+    // Story 5.7: Enforce creator-only channel restrictions
     "messages": {
       "$conversationId": {
         // Only participants of the conversation can read messages
         ".read": "auth != null && root.child('conversations').child($conversationId).child('participantIDs').child(auth.uid).exists()",
         "$messageId": {
-          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid)"
+          // Story 5.7: Check if channel is creator-only, and if so, only allow creator to write
+          // If isCreatorOnly is true, check if user is creator (userType == 'creator')
+          // Otherwise, allow any participant to write
+          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid) && (!root.child('conversations').child($conversationId).child('isCreatorOnly').val() || root.child('users').child(auth.uid).child('userType').val() == 'creator')"
         }
       }
     },

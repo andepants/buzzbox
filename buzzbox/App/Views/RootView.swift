@@ -33,8 +33,8 @@ struct RootView: View {
                 // Loading state during auth check
                 LoadingView()
             } else if authViewModel.isAuthenticated {
-                // User authenticated - show main app
-                ConversationListView()
+                // User authenticated - show main app with tab navigation
+                MainTabView()
                     .sheet(isPresented: $showMessageThread) {
                         if let conversation = selectedConversation {
                             MessageThreadView(conversation: conversation)
