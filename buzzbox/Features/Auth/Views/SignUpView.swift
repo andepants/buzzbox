@@ -58,7 +58,7 @@ struct SignUpView: View {
             .onChange(of: viewModel.isAuthenticated) { _, isAuthenticated in
                 if isAuthenticated {
                     // Success haptic feedback
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    HapticFeedback.notification(.success)
                     // Dismiss to return to root, which will show ConversationListView
                     dismiss()
                 }
@@ -185,10 +185,10 @@ struct SignUpView: View {
                 }
             }
 
-            // Display Name Field
+            // Username Field
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    TextField("Display Name (Username)", text: $viewModel.displayName)
+                    TextField("Username", text: $viewModel.displayName)
                         .textContentType(.username)
                         .autocapitalization(.none)
                         .padding(12)
@@ -203,8 +203,8 @@ struct SignUpView: View {
                         .onChange(of: viewModel.displayName) { _, _ in
                             viewModel.checkDisplayNameAvailability()
                         }
-                        .accessibilityLabel("Display name")
-                        .accessibilityHint("Instagram-style username")
+                        .accessibilityLabel("Username")
+                        .accessibilityHint("3-30 characters, letters, numbers, periods, and underscores")
 
                     // Availability indicator
                     availabilityIndicator

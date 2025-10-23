@@ -43,18 +43,32 @@ interface ConversationData {
  * For 1:1 chats: Sends to single recipient (other participant)
  * For group chats: Sends to all participants except sender
  * System messages do not trigger notifications
+ *
+ * Retry Configuration:
+ * - Enabled: Function will auto-retry on failure
+ * - Firebase Functions will retry failed executions for up to 7 days
+ * - Retry happens with exponential backoff
  */
 export const onMessageCreated = onValueCreated({
   ref: "/messages/{conversationID}/{messageID}",
   region: "us-central1",
   instance: "buzzbox-91c9a-default-rtdb",
+  retry: true, // Enable automatic retry on failure
 }, async (event) => {
   const message = event.data.val() as MessageData;
   const {conversationID, messageID} = event.params;
 
+  logger.info("🔔 onMessageCreated TRIGGERED", {
+    conversationID,
+    messageID,
+    senderID: message.senderID,
+    textPreview: message.text.substring(0, 50),
+    timestamp: new Date().toISOString(),
+  });
+
   // Skip system messages
   if (message.isSystemMessage === true) {
-    logger.info("Skipping system message notification", {conversationID, messageID});
+    logger.info("ℹ️ Skipping system message notification", {conversationID, messageID});
     return null;
   }
 
@@ -165,27 +179,61 @@ export const onMessageCreated = onValueCreated({
     return null;
   } else {
     // ========================================
-    // 1:1 MESSAGE NOTIFICATION
+    // 1:1 MESSAGE NOTIFICATION (DM)
     // ========================================
+    logger.info("📱 Processing 1:1 DM notification", {
+      conversationID,
+      messageID,
+      senderID,
+      senderName,
+    });
+
     const participantIDs = Object.keys(conversation.participantIDs || {});
+    logger.info("👥 DM participants", {participantIDs});
+
     const recipientID = participantIDs.find((id) => id !== senderID);
 
     if (!recipientID) {
-      logger.error("Recipient not found in conversation", {conversationID});
+      logger.error("❌ Recipient not found in conversation", {
+        conversationID,
+        participantIDs,
+        senderID,
+      });
       return null;
     }
 
+    logger.info("🎯 Target recipient identified", {recipientID});
+
     // Fetch recipient FCM token
+    logger.info("🔑 Fetching FCM token for recipient...", {recipientID});
     const recipientDoc = await admin.firestore()
       .collection("users")
       .doc(recipientID)
       .get();
+
+    if (!recipientDoc.exists) {
+      logger.error("❌ Recipient user document not found in Firestore", {
+        recipientID,
+        conversationID,
+      });
+      return null;
+    }
+
     const fcmToken = recipientDoc.data()?.fcmToken;
 
     if (!fcmToken) {
-      logger.info("No FCM token found for recipient", {conversationID, recipientID});
+      logger.warn("⚠️ No FCM token found for recipient", {
+        conversationID,
+        recipientID,
+        reason: "User may not have logged in on a physical device (FCM requires physical device)",
+      });
       return null;
     }
+
+    logger.info("✅ FCM token retrieved", {
+      recipientID,
+      tokenPreview: fcmToken.substring(0, 20) + "...",
+    });
 
     // Build notification payload
     const payload = {
@@ -212,16 +260,55 @@ export const onMessageCreated = onValueCreated({
       },
     };
 
-    // Send notification
+    logger.info("📤 Sending FCM notification to recipient...", {
+      recipientID,
+      title: senderName,
+      bodyPreview: message.text.substring(0, 50),
+    });
+
+    // Send notification with detailed error logging
     try {
-      await admin.messaging().send(payload);
-      logger.info("1:1 notification sent", {conversationID, recipientID});
-    } catch (error) {
-      logger.error("Failed to send 1:1 notification", {
+      const response = await admin.messaging().send(payload);
+      logger.info("✅ 1:1 DM notification sent successfully", {
         conversationID,
         recipientID,
-        error: error instanceof Error ? error.message : String(error),
+        messageID: response,
+        senderName,
       });
+    } catch (error) {
+      // Detailed FCM error logging
+      const errorCode = (error as any).code;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      logger.error("❌ Failed to send 1:1 DM notification", {
+        conversationID,
+        recipientID,
+        messageID,
+        errorCode,
+        errorMessage,
+        senderName,
+      });
+
+      // Log specific FCM error types for debugging
+      if (errorCode === "messaging/invalid-registration-token" ||
+          errorCode === "messaging/registration-token-not-registered") {
+        logger.error("🚨 FCM Token Issue - Token is invalid or unregistered", {
+          recipientID,
+          suggestion: "User should re-login to refresh FCM token, or token expired",
+          tokenPreview: fcmToken.substring(0, 20) + "...",
+        });
+      } else if (errorCode === "messaging/invalid-argument") {
+        logger.error("🚨 FCM Payload Issue - Invalid message format", {
+          payload: JSON.stringify(payload, null, 2),
+        });
+      } else if (errorCode === "messaging/server-unavailable") {
+        logger.error("🚨 FCM Server Issue - Retry will be attempted", {
+          suggestion: "Firebase Functions will auto-retry this function",
+        });
+      }
+
+      // Re-throw error to trigger automatic retry (if retry is enabled)
+      throw error;
     }
 
     return null;

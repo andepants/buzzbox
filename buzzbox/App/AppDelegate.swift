@@ -44,9 +44,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             options: authOptions
         ) { granted, error in
             if granted {
-                print("✅ Notification permission granted")
             } else if let error = error {
-                print("❌ Notification permission denied: \(error.localizedDescription)")
             }
         }
 
@@ -63,7 +61,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) {
         // Pass token to Firebase Messaging
         Messaging.messaging().apnsToken = deviceToken
-        print("✅ APNs token registered with Firebase Messaging")
     }
 
     /// Called when APNs registration fails
@@ -71,7 +68,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: Error
     ) {
-        print("❌ Failed to register for remote notifications: \(error.localizedDescription)")
     }
 
     // MARK: - MessagingDelegate
@@ -79,11 +75,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Called when FCM token is refreshed
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let fcmToken = fcmToken else {
-            print("❌ FCM token is nil")
             return
         }
 
-        print("✅ FCM token received: \(fcmToken)")
 
         // Store token in Firestore for Cloud Functions to use
         Task {
@@ -92,17 +86,20 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     }
 
     /// Manually request FCM token (for existing users without tokens)
+    ///
+    /// ⚠️ IMPORTANT: FCM push notifications DO NOT work in iOS Simulator
+    /// - iOS Simulator doesn't support APNs (Apple Push Notification Service)
+    /// - FCM on iOS requires APNs to deliver remote push notifications
+    /// - For testing push notifications, you MUST use a physical iPhone device
+    /// - In-app notifications (NotificationService) still work in simulator while app is open
     func refreshFCMToken() {
         // Skip FCM token on simulator (APNS not available)
         #if targetEnvironment(simulator)
-        print("⚠️ Skipping FCM token fetch on simulator (APNS not available)")
         return
         #else
         Messaging.messaging().token { token, error in
             if let error = error {
-                print("❌ Error fetching FCM token: \(error.localizedDescription)")
             } else if let token = token {
-                print("✅ FCM token refreshed: \(token)")
                 Task {
                     await self.saveFCMToken(token)
                 }
@@ -114,7 +111,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Saves FCM token to Firestore for current user
     private func saveFCMToken(_ token: String) async {
         guard let userID = Auth.auth().currentUser?.uid else {
-            print("⚠️ Cannot save FCM token: No authenticated user")
             return
         }
 
@@ -123,9 +119,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 .collection("users")
                 .document(userID)
                 .setData(["fcmToken": token], merge: true)
-            print("✅ FCM token saved to Firestore for user: \(userID)")
         } catch {
-            print("❌ Failed to save FCM token: \(error.localizedDescription)")
         }
     }
 
@@ -137,6 +131,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
+        let userInfo = notification.request.content.userInfo
+        let conversationID = userInfo["conversationID"] as? String ?? "unknown"
+
+
         // Show notification even when app is in foreground
         completionHandler([.banner, .sound, .badge])
     }
@@ -151,7 +149,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
         // Extract conversationID from notification payload
         if let conversationID = userInfo["conversationID"] as? String {
-            print("📱 User tapped notification for conversation: \(conversationID)")
 
             // Post NotificationCenter event to open conversation
             // RootView will observe this and present MessageThreadView
@@ -161,7 +158,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 userInfo: ["conversationID": conversationID]
             )
         } else {
-            print("⚠️ No conversationID found in notification payload")
         }
 
         completionHandler()

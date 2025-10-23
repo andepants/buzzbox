@@ -11,6 +11,7 @@ import SwiftData
 import FirebaseAuth
 import FirebaseFirestore
 import Combine
+import Kingfisher
 
 /// Authentication view model
 @MainActor
@@ -174,7 +175,8 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Auto-Login
 
     /// Checks authentication status on app launch
-    func checkAuthStatus() async {
+    /// - Parameter modelContext: SwiftData ModelContext for local persistence
+    func checkAuthStatus(modelContext: ModelContext) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -232,6 +234,35 @@ final class AuthViewModel: ObservableObject {
                 userType: userType,
                 isPublic: isPublic
             )
+
+            // Update local SwiftData UserEntity (upsert pattern)
+            // This ensures profile images and other critical data persist across app restarts
+            let descriptor = FetchDescriptor<UserEntity>(
+                predicate: #Predicate { $0.id == uid }
+            )
+            let existingUsers = try modelContext.fetch(descriptor)
+
+            if let existingUser = existingUsers.first {
+                // Update existing user with latest data from Firestore
+                existingUser.email = email
+                existingUser.displayName = displayName
+                existingUser.photoURL = photoURL
+                existingUser.userType = userType
+                existingUser.isPublic = isPublic
+            } else {
+                // Create new user entity if doesn't exist
+                let userEntity = UserEntity(
+                    id: uid,
+                    email: email,
+                    displayName: displayName,
+                    photoURL: photoURL,
+                    createdAt: createdAt,
+                    userType: userType,
+                    isPublic: isPublic
+                )
+                modelContext.insert(userEntity)
+            }
+            try modelContext.save()
 
             // Note: authService.currentUser will be updated via Firebase Auth state listener
             // No need to manually sync here
@@ -385,10 +416,49 @@ final class AuthViewModel: ObservableObject {
     /// Logs out current user and clears ALL data
     /// - Parameter modelContext: SwiftData ModelContext for clearing local data
     func logout(modelContext: ModelContext) async {
-        print("🔵 [AUTH-VM] Starting logout...")
 
-        // OPTIMISTIC UI: Reset auth state IMMEDIATELY for instant UI redirect
-        // This ensures user sees LoginView instantly (no waiting for cleanup)
+        // CRITICAL: Complete cleanup BEFORE optimistic UI reset
+        // This ensures the next user starts with a completely clean slate
+
+        // 1. Remove all Firebase listeners FIRST (prevents post-logout observer fires)
+        await UserPresenceService.shared.removeAllListeners()
+
+        // 2. Set user offline in Realtime Database (non-blocking, with timeout)
+        await UserPresenceService.shared.setOffline()
+
+        // 3. Sign out from Firebase Auth
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            // Don't throw - continue cleanup
+        }
+
+        // 4. Delete auth token from Keychain
+        let keychainService = KeychainService()
+        do {
+            try keychainService.delete()
+        } catch {
+            // Continue cleanup even if Keychain fails
+        }
+
+        // 5. Clear ALL UserDefaults (not just tab selection)
+        // This ensures no stale state persists between users
+        if let bundleID = Bundle.main.bundleIdentifier {
+            UserDefaults.standard.removePersistentDomain(forName: bundleID)
+            UserDefaults.standard.synchronize()
+        }
+
+        // 6. Clear all SwiftData entities
+        await clearAllLocalData(modelContext: modelContext)
+
+        // 7. Clear Kingfisher image cache
+        await Task.detached(priority: .background) {
+            KingfisherManager.shared.cache.clearMemoryCache()
+            KingfisherManager.shared.cache.clearDiskCache()
+        }.value
+
+        // OPTIMISTIC UI: Reset auth state AFTER cleanup for instant UI redirect
+        // This ensures user sees LoginView instantly
         isAuthenticated = false
         currentUser = nil
         email = ""
@@ -401,66 +471,39 @@ final class AuthViewModel: ObservableObject {
         displayNameAvailability = .unknown
         loginAttemptCount = 0
 
-        // Reset tab selection to Channels (tab 0)
-        UserDefaults.standard.set(0, forKey: "selectedTab")
-
-        print("✅ [AUTH-VM] Auth state reset - user redirected to LoginView")
-
-        // Haptic feedback (immediate, before cleanup)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        // Haptic feedback (immediate, after cleanup)
+        HapticFeedback.impact(.medium)
 
         // VoiceOver announcement (immediate)
         UIAccessibility.post(
             notification: .screenChanged,
             argument: "You have been logged out"
         )
-
-        // Background cleanup (user already sees logged out state)
-        do {
-            // 1. Clear all SwiftData entities
-            await clearAllLocalData(modelContext: modelContext)
-
-            // 2. Call AuthService.signOut() for Firebase/Keychain cleanup
-            try await authService.signOut()
-
-            print("✅ [AUTH-VM] Logout cleanup completed successfully")
-        } catch {
-            print("🔴 [AUTH-VM] Logout cleanup error: \(error)")
-            // Non-critical: user already logged out visually
-        }
     }
 
     /// Clear all SwiftData entities on logout
     /// - Parameter modelContext: SwiftData ModelContext
     private func clearAllLocalData(modelContext: ModelContext) async {
-        print("🔵 [AUTH-VM] Clearing all SwiftData entities...")
 
         do {
             // Delete all UserEntity records
             try modelContext.delete(model: UserEntity.self)
-            print("   ✓ Deleted UserEntity records")
 
             // Delete all ConversationEntity records
             try modelContext.delete(model: ConversationEntity.self)
-            print("   ✓ Deleted ConversationEntity records")
 
             // Delete all MessageEntity records
             try modelContext.delete(model: MessageEntity.self)
-            print("   ✓ Deleted MessageEntity records")
 
             // Delete all FAQEntity records
             try modelContext.delete(model: FAQEntity.self)
-            print("   ✓ Deleted FAQEntity records")
 
             // Delete all AttachmentEntity records
             try modelContext.delete(model: AttachmentEntity.self)
-            print("   ✓ Deleted AttachmentEntity records")
 
             try modelContext.save()
 
-            print("✅ [AUTH-VM] All SwiftData entities deleted")
         } catch {
-            print("🔴 [AUTH-VM] Failed to clear SwiftData: \(error)")
             // Non-critical error, continue logout
         }
     }

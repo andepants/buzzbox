@@ -7,6 +7,7 @@
 /// [Source: Story 2.2 - Display Conversation List]
 
 import SwiftUI
+import SwiftData
 import FirebaseAuth
 import FirebaseDatabase
 
@@ -15,6 +16,8 @@ struct ConversationRowView: View {
     // MARK: - Properties
 
     let conversation: ConversationEntity
+
+    @Environment(\.modelContext) private var modelContext
 
     @State private var recipientUser: UserEntity?
     @State private var presenceStatus: PresenceStatus?
@@ -201,7 +204,7 @@ struct ConversationRowView: View {
             return
         }
 
-        recipientUser = try? await ConversationService.shared.getUser(userID: recipientID)
+        recipientUser = try? await ConversationService.shared.getUser(userID: recipientID, modelContext: modelContext)
 
         // ✅ Start listening to presence
         presenceHandle = UserPresenceService.shared.listenToPresence(userID: recipientID) { status in

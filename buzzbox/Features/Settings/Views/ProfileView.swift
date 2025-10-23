@@ -89,10 +89,8 @@ struct ProfileView: View {
                         .cancelOnDisappear(true)
                         .onSuccess { result in
                             // Force cache refresh to ensure new images display immediately
-                            print("✅ Profile image loaded successfully")
                         }
                         .onFailure { error in
-                            print("⚠️ Profile image failed to load: \(error)")
                         }
                         .resizable()
                         .scaledToFill()
@@ -154,7 +152,7 @@ struct ProfileView: View {
                         .foregroundColor(.gray)
                     Spacer()
                     HStack(spacing: 4) {
-                        Text(viewModel.displayName)
+                        Text(authViewModel.currentUser?.displayName ?? "")
                             .font(.subheadline)
                             .foregroundColor(.primary)
                             .fontWeight(.medium)
@@ -167,7 +165,7 @@ struct ProfileView: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Username: \(viewModel.displayName)")
+                .accessibilityLabel("Username: \(authViewModel.currentUser?.displayName ?? "")")
 
                 Divider()
 

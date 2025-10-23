@@ -163,20 +163,14 @@ final class ConversationEntity {
     /// - Parameter isCreator: Whether the current user is the creator
     /// - Returns: True if user can post, false otherwise
     func canUserPost(isCreator: Bool) -> Bool {
-        print("  🔑 [PERMISSION] canUserPost() called:")
-        print("    - Channel: \(displayName ?? id)")
-        print("    - isCreatorOnly: \(isCreatorOnly)")
-        print("    - User isCreator: \(isCreator)")
 
         // If not a creator-only channel, everyone can post
         guard isCreatorOnly else {
-            print("    - Result: TRUE (public channel)")
             return true
         }
 
         // Only creator can post to creator-only channels
         let result = isCreator
-        print("    - Result: \(result ? "TRUE" : "FALSE") (creator-only, user is \(isCreator ? "creator" : "fan"))")
         return result
     }
 }

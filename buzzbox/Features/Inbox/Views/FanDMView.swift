@@ -90,9 +90,7 @@ struct FanDMView: View {
 
         do {
             let _ = try await viewModel.createDMWithCreator(currentUserID: currentUserID)
-            print("✅ Created DM with Andrew")
         } catch {
-            print("❌ Failed to create DM with Andrew: \(error)")
         }
     }
 }

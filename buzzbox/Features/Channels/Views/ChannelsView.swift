@@ -161,10 +161,6 @@ struct ChannelsView: View {
                 .buttonStyle(PlainButtonStyle())
                 .simultaneousGesture(
                     TapGesture().onEnded { _ in
-                        print("🔔 [NAV] Channel tapped: \(channel.displayName ?? channel.id)")
-                        print("📍 [NAV] Channel ID: \(channel.id)")
-                        print("👥 [NAV] Participants: \(channel.participantIDs.count)")
-                        print("🔗 [NAV] Navigating to MessageThreadView...")
                     }
                 )
                 .contextMenu {
@@ -213,24 +209,21 @@ struct ChannelsView: View {
 
         // Haptic feedback
         #if os(iOS)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        HapticFeedback.impact(.light)
         #endif
 
-        print("\(channel.isPinned ? "📌" : "📍") \(channel.isPinned ? "Pinned" : "Unpinned"): \(channel.displayName ?? channel.id)")
     }
 
     private func toggleMute(_ channel: ConversationEntity) {
         channel.isMuted.toggle()
         try? modelContext.save()
 
-        print("\(channel.isMuted ? "🔇" : "🔔") \(channel.isMuted ? "Muted" : "Unmuted"): \(channel.displayName ?? channel.id)")
     }
 
     private func toggleUnread(_ channel: ConversationEntity) {
         channel.unreadCount = channel.unreadCount > 0 ? 0 : 1
         try? modelContext.save()
 
-        print("\(channel.unreadCount > 0 ? "📬" : "📭") \(channel.unreadCount > 0 ? "Marked unread" : "Marked read"): \(channel.displayName ?? channel.id)")
     }
 }
 

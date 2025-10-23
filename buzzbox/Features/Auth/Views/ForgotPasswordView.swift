@@ -171,12 +171,12 @@ struct ForgotPasswordView: View {
         do {
             try await viewModel.sendPasswordReset(email: viewModel.email)
             // Success haptic feedback
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            HapticFeedback.notification(.success)
             // VoiceOver announcement
             UIAccessibility.post(notification: .announcement, argument: "Password reset email sent to \(viewModel.email)")
         } catch {
             // Error haptic feedback
-            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            HapticFeedback.notification(.error)
         }
     }
 }

@@ -165,7 +165,6 @@ final class ProfileViewModel {
 
             // Clear Kingfisher cache for old photo URL to prevent concurrent fetch issues
             if let oldPhotoURL = photoURL {
-                print("🗑️ [PROFILE] Clearing cache for old photo URL: \(oldPhotoURL.absoluteString)")
                 ImageCache.default.removeImage(forKey: oldPhotoURL.absoluteString)
                 ImageDownloader.default.cancel(url: oldPhotoURL)
             }
@@ -174,7 +173,6 @@ final class ProfileViewModel {
 
             // Upload to Firebase Storage
             var downloadURL = try await storageService.uploadImage(image, path: path)
-            print("📸 [PROFILE] Upload returned URL: \(downloadURL.absoluteString)")
 
             // Add cache-busting timestamp to force Kingfisher to treat this as a new URL
             // This ensures the new image displays immediately instead of showing cached version
@@ -185,7 +183,6 @@ final class ProfileViewModel {
                 ]
                 if let cacheBustedURL = urlComponents.url {
                     downloadURL = cacheBustedURL
-                    print("🔄 [PROFILE] Cache-busted URL: \(downloadURL.absoluteString)")
                 }
             }
 
@@ -209,22 +206,17 @@ final class ProfileViewModel {
 
             // Clear all Kingfisher caches to ensure fresh load
             ImageCache.default.clearMemoryCache()
-            print("✅ [PROFILE] Cleared Kingfisher memory cache")
 
             // Success haptic feedback
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
+            HapticFeedback.notification(.success)
 
-            print("✅ [PROFILE] Profile picture uploaded and saved successfully with URL: \(downloadURL.absoluteString)")
         } catch {
             errorMessage = error.localizedDescription
             showError = true
 
             // Error haptic feedback
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.error)
+            HapticFeedback.notification(.error)
 
-            print("⚠️ [PROFILE] Profile picture upload failed: \(error)")
         }
     }
 
@@ -255,15 +247,13 @@ final class ProfileViewModel {
             showSuccess = true
 
             // Success haptic feedback
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.success)
+            HapticFeedback.notification(.success)
         } catch {
             errorMessage = error.localizedDescription
             showError = true
 
             // Error haptic feedback
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.error)
+            HapticFeedback.notification(.error)
         }
     }
 

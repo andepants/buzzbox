@@ -207,7 +207,6 @@ struct InboxView: View {
             try? await ConversationService.shared.syncConversation(conversation)
         }
 
-        print("📦 Archived conversation: \(conversation.id)")
     }
 
     private func togglePin(_ conversation: ConversationEntity) {
@@ -216,17 +215,15 @@ struct InboxView: View {
 
         // Haptic feedback
         #if os(iOS)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        HapticFeedback.impact(.light)
         #endif
 
-        print("\(conversation.isPinned ? "📌" : "📍") \(conversation.isPinned ? "Pinned" : "Unpinned"): \(conversation.id)")
     }
 
     private func toggleUnread(_ conversation: ConversationEntity) {
         conversation.unreadCount = conversation.unreadCount > 0 ? 0 : 1
         try? modelContext.save()
 
-        print("\(conversation.unreadCount > 0 ? "📬" : "📭") \(conversation.unreadCount > 0 ? "Marked unread" : "Marked read"): \(conversation.id)")
     }
 }
 

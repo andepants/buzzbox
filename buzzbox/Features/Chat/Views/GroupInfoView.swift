@@ -232,7 +232,6 @@ struct GroupInfoView: View {
             try? modelContext.save()
 
         } catch {
-            print("❌ Error loading participants: \(error)")
             errorMessage = "Failed to load participants"
         }
     }
@@ -299,7 +298,6 @@ struct GroupInfoView: View {
             dismiss()
 
         } catch {
-            print("❌ Error leaving group: \(error)")
             errorMessage = "Failed to leave group"
         }
     }
@@ -312,13 +310,11 @@ struct GroupInfoView: View {
 
             // Check if participant still in group (concurrent removal prevention)
             guard conversation.participantIDs.contains(participant.id) else {
-                print("⚠️ Participant already removed")
                 return
             }
 
             // Check minimum participant count BEFORE removal
             if conversation.participantIDs.count <= 2 {
-                print("⚠️ Cannot remove participant: minimum 2 participants required")
                 showMinimumParticipantWarning = true
                 return
             }
@@ -353,7 +349,6 @@ struct GroupInfoView: View {
                 await loadParticipants()
 
             } catch {
-                print("❌ Error removing participant: \(error)")
                 errorMessage = "Failed to remove participant"
             }
         }
@@ -365,7 +360,6 @@ struct GroupInfoView: View {
             conversationID: conversation.id,
             userID: userID
         )
-        print("✅ Cleaned up typing indicator for removed user: \(userID)")
     }
 
     /// Start listening to participant changes (auto-dismiss if removed)

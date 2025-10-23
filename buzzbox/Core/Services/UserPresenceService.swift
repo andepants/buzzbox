@@ -41,6 +41,9 @@ final class UserPresenceService {
     // Store NotificationCenter observers for cleanup
     nonisolated(unsafe) private var lifecycleObservers: [NSObjectProtocol] = []
 
+    // Track current screen for notification filtering
+    nonisolated(unsafe) private var currentConversationID: String?
+
     // MARK: - Initialization
 
     private init() {
@@ -52,31 +55,21 @@ final class UserPresenceService {
     /// Set user as online with auto-cleanup on disconnect
     func setOnline() async {
         guard let userID = Auth.auth().currentUser?.uid else {
-            print("⚠️ [PRESENCE] setOnline skipped - no authenticated user")
             return
         }
 
-        print("🟢 [PRESENCE] Setting user \(userID) as ONLINE...")
         let presenceRef = database.child("userPresence/\(userID)")
 
         do {
             // Set online status
             try await presenceRef.child("online").setValue(true)
-            print("   ✓ [PRESENCE] Set online = true")
-
             try await presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
-            print("   ✓ [PRESENCE] Set lastSeen timestamp")
 
             // ✅ CRITICAL: Auto-cleanup on disconnect (app crash, force quit, network drop)
             try await presenceRef.child("online").onDisconnectRemoveValue()
-            print("   ✓ [PRESENCE] Set onDisconnect for online")
-
             try await presenceRef.child("lastSeen").onDisconnectSetValue(ServerValue.timestamp())
-            print("   ✓ [PRESENCE] Set onDisconnect for lastSeen")
-
-            print("✅ [PRESENCE] User presence: ONLINE")
         } catch {
-            print("❌ [PRESENCE] Failed to set online presence: \(error.localizedDescription)")
+            // Silent failure - presence is non-critical
         }
     }
 
@@ -84,7 +77,6 @@ final class UserPresenceService {
     /// - Note: Has timeout protection to prevent blocking during logout
     func setOffline() async {
         guard let userID = Auth.auth().currentUser?.uid else {
-            print("⚠️ [PRESENCE] setOffline skipped - no authenticated user")
             return
         }
 
@@ -120,12 +112,46 @@ final class UserPresenceService {
                 try await group.next()
                 group.cancelAll()
             }
-            print("✅ User presence: OFFLINE")
-        } catch is TimeoutError {
-            print("⚠️ [PRESENCE] setOffline timed out (non-critical)")
         } catch {
-            print("⚠️ [PRESENCE] Failed to set offline presence (non-critical): \(error.localizedDescription)")
+            // Silent failure - presence is non-critical
         }
+    }
+
+    /// Update current screen/conversation the user is viewing
+    /// This allows other users and Cloud Functions to know if user is actively viewing a conversation
+    /// - Parameter conversationID: The conversation ID being viewed, or nil if not in any conversation
+    func updateCurrentScreen(conversationID: String?) async {
+        guard let userID = Auth.auth().currentUser?.uid else {
+            return
+        }
+
+        // Update local cache
+        self.currentConversationID = conversationID
+
+        let presenceRef = database.child("userPresence/\(userID)")
+
+        do {
+            if let conversationID = conversationID {
+                // User is viewing a specific conversation
+                try await presenceRef.child("currentScreen").setValue("conversation")
+                try await presenceRef.child("currentConversationID").setValue(conversationID)
+
+                // Auto-clear on disconnect
+                try await presenceRef.child("currentScreen").onDisconnectRemoveValue()
+                try await presenceRef.child("currentConversationID").onDisconnectRemoveValue()
+            } else {
+                // User left the conversation screen
+                try await presenceRef.child("currentScreen").removeValue()
+                try await presenceRef.child("currentConversationID").removeValue()
+            }
+        } catch {
+            // Silent failure - screen tracking is non-critical
+        }
+    }
+
+    /// Get the current conversation ID being viewed (local cache)
+    func getCurrentConversationID() -> String? {
+        return currentConversationID
     }
 
     /// Timeout error
@@ -183,25 +209,16 @@ final class UserPresenceService {
         userID: String,
         onChange: @escaping (PresenceStatus) -> Void
     ) -> DatabaseHandle {
-        print("👂 [PRESENCE] Starting listener for user: \(userID)")
         let presenceRef = database.child("userPresence/\(userID)")
 
         let handle = presenceRef.observe(.value) { snapshot in
-            print("📡 [PRESENCE] Received update for user: \(userID)")
-            print("   Snapshot exists: \(snapshot.exists())")
-            print("   Snapshot value: \(snapshot.value ?? "nil")")
-
             let isOnline = snapshot.childSnapshot(forPath: "online").value as? Bool ?? false
             let lastSeenTimestamp = snapshot.childSnapshot(forPath: "lastSeen").value as? TimeInterval ?? 0
-
-            print("   Parsed: isOnline=\(isOnline), lastSeen=\(lastSeenTimestamp)")
 
             let status = PresenceStatus(
                 isOnline: isOnline,
                 lastSeen: Date(timeIntervalSince1970: lastSeenTimestamp / 1000)
             )
-
-            print("   Status: \(status.displayText)")
 
             Task { @MainActor in
                 onChange(status)
@@ -225,24 +242,17 @@ final class UserPresenceService {
 
     /// Remove all active presence listeners (call on logout)
     func removeAllListeners() async {
-        print("🔵 [PRESENCE] Removing all active listeners...")
-
         // Remove Firebase RTDB listeners
         for (userID, handle) in presenceListeners {
             database.child("userPresence/\(userID)").removeObserver(withHandle: handle)
-            print("   ✓ Removed RTDB listener for user: \(userID)")
         }
         presenceListeners.removeAll()
 
         // Remove NotificationCenter observers
-        let observerCount = lifecycleObservers.count
         for observer in lifecycleObservers {
             NotificationCenter.default.removeObserver(observer)
         }
         lifecycleObservers.removeAll()
-        print("   ✓ Removed \(observerCount) NotificationCenter observers")
-
-        print("✅ [PRESENCE] All listeners removed")
     }
 
     deinit {

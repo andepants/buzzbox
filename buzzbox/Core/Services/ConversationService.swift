@@ -88,7 +88,6 @@ final class ConversationService {
         }
 
         try await conversationRef.setValue(conversationData)
-        print("✅ Conversation synced to RTDB: \(conversation.id) (isGroup: \(conversation.isGroup))")
     }
 
     /// Finds a conversation by ID in RTDB
@@ -104,7 +103,6 @@ final class ConversationService {
             return nil
         }
 
-        print("📥 Found conversation in RTDB: \(id)")
 
         return ConversationEntity(
             id: id,
@@ -118,21 +116,35 @@ final class ConversationService {
         )
     }
 
-    /// Gets a user by ID from Firestore
-    /// - Parameter userID: User ID
+    /// Gets a user by ID with SwiftData caching for instant access
+    /// - Parameters:
+    ///   - userID: User ID
+    ///   - modelContext: Optional ModelContext for SwiftData caching (if provided, checks cache first)
     /// - Returns: UserEntity if found, nil otherwise
     /// - Throws: Database errors
-    nonisolated func getUser(userID: String) async throws -> UserEntity? {
+    /// - Note: With modelContext, checks SwiftData cache first (fast <10ms), then Firestore fallback
+    @MainActor
+    func getUser(userID: String, modelContext: ModelContext?) async throws -> UserEntity? {
+        // 1. Check SwiftData cache first (if modelContext provided)
+        if let modelContext = modelContext {
+            let descriptor = FetchDescriptor<UserEntity>(
+                predicate: #Predicate { $0.id == userID }
+            )
+
+            if let cachedUser = try? modelContext.fetch(descriptor).first {
+                return cachedUser
+            }
+        }
+
+        // 2. Fallback to Firestore (slow network call)
         let userRef = Firestore.firestore().collection("users").document(userID)
         let snapshot = try await userRef.getDocument()
 
         guard snapshot.exists,
               let userData = snapshot.data() else {
-            print("⚠️ User not found in Firestore: \(userID)")
             return nil
         }
 
-        print("✅ User found in Firestore: \(userID)")
 
         // Parse userType with fallback logic (matching AuthService pattern)
         let email = userData["email"] as? String ?? ""
@@ -145,13 +157,21 @@ final class ConversationService {
             userType = email.lowercased() == "andrewsheim@gmail.com" ? .creator : .fan
         }
 
-        return UserEntity(
+        let user = UserEntity(
             id: userID,
             email: email,
             displayName: userData["displayName"] as? String ?? "",
             photoURL: userData["photoURL"] as? String,
             userType: userType
         )
+
+        // 3. Cache in SwiftData for next time (if modelContext provided)
+        if let modelContext = modelContext {
+            modelContext.insert(user)
+            try? modelContext.save()
+        }
+
+        return user
     }
 
     /// Checks if a user is blocked
@@ -164,7 +184,6 @@ final class ConversationService {
 
         let isBlocked = snapshot.exists()
         if isBlocked {
-            print("🚫 User is blocked: \(userID)")
         }
 
         return isBlocked
@@ -172,13 +191,180 @@ final class ConversationService {
 
     // MARK: - Channel Operations
 
+    /// Syncs all user's channels from RTDB to SwiftData (for initial load on login)
+    /// - Parameters:
+    ///   - userID: User ID to sync channels for
+    ///   - modelContext: SwiftData ModelContext to save channels to
+    /// - Note: This is called during login to pre-populate local database
+    @MainActor
+    func syncInitialChannels(userID: String, modelContext: ModelContext) async throws {
+
+        // Fetch all conversations from RTDB
+        let conversationsRef = database.child("conversations")
+        let snapshot = try await conversationsRef.getData()
+
+        guard snapshot.exists() else {
+            return
+        }
+
+        var processedCount = 0
+        var skippedCount = 0
+
+        for child in snapshot.children.allObjects as? [DataSnapshot] ?? [] {
+            guard let conversationData = child.value as? [String: Any] else {
+                continue
+            }
+
+            let conversationID = child.key
+            let isGroup = conversationData["isGroup"] as? Bool ?? false
+
+            // Parse participantIDs from RTDB object format {uid: true} to array [uid]
+            let participantIDsDict = conversationData["participantIDs"] as? [String: Any] ?? [:]
+            let participantIDs = Array(participantIDsDict.keys)
+
+            // Skip conversations user is not part of
+            guard participantIDs.contains(userID) else {
+                skippedCount += 1
+                continue
+            }
+
+            // Parse adminUserIDs from RTDB object format
+            let adminUserIDsDict = conversationData["adminUserIDs"] as? [String: Any] ?? [:]
+            let adminUserIDs = Array(adminUserIDsDict.keys)
+
+            // Parse group fields
+            let groupName = conversationData["groupName"] as? String ?? "Unknown"
+            let groupPhotoURL = conversationData["groupPhotoURL"] as? String
+            let isCreatorOnly = conversationData["isCreatorOnly"] as? Bool ?? false
+            let channelEmoji = conversationData["channelEmoji"] as? String
+            let channelDescription = conversationData["channelDescription"] as? String
+
+            // Parse timestamps (RTDB stores in milliseconds)
+            let createdAtMillis = conversationData["createdAt"] as? Double ?? 0
+            let updatedAtMillis = conversationData["updatedAt"] as? Double ?? 0
+            let lastMessageMillis = conversationData["lastMessageTimestamp"] as? Double ?? 0
+
+            // Check if exists locally
+            let descriptor = FetchDescriptor<ConversationEntity>(
+                predicate: #Predicate { $0.id == conversationID }
+            )
+
+            let existing = try? modelContext.fetch(descriptor).first
+
+            if existing == nil {
+                // New conversation from RTDB
+                let conversation = ConversationEntity(
+                    id: conversationID,
+                    participantIDs: participantIDs,
+                    displayName: groupName,
+                    groupPhotoURL: groupPhotoURL,
+                    adminUserIDs: adminUserIDs,
+                    isGroup: isGroup,
+                    isCreatorOnly: isCreatorOnly,
+                    channelEmoji: channelEmoji,
+                    channelDescription: channelDescription,
+                    createdAt: Date(timeIntervalSince1970: createdAtMillis / 1000),
+                    syncStatus: .synced
+                )
+
+                // Update last message fields
+                conversation.lastMessageText = conversationData["lastMessage"] as? String
+                conversation.lastMessageAt = Date(timeIntervalSince1970: lastMessageMillis / 1000)
+                conversation.unreadCount = conversationData["unreadCount"] as? Int ?? 0
+                conversation.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
+
+                modelContext.insert(conversation)
+                processedCount += 1
+            } else if let existing = existing {
+                // Update existing conversation
+                existing.participantIDs = participantIDs
+                existing.adminUserIDs = adminUserIDs
+                existing.displayName = groupName
+                existing.groupPhotoURL = groupPhotoURL
+                existing.isGroup = isGroup
+                existing.isCreatorOnly = isCreatorOnly
+                existing.channelEmoji = channelEmoji
+                existing.channelDescription = channelDescription
+                existing.lastMessageText = conversationData["lastMessage"] as? String
+                existing.lastMessageAt = Date(timeIntervalSince1970: lastMessageMillis / 1000)
+                existing.unreadCount = conversationData["unreadCount"] as? Int ?? 0
+                existing.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
+                processedCount += 1
+            }
+        }
+
+        // Save all changes to SwiftData
+        try modelContext.save()
+
+    }
+
+    /// Syncs all users from Firestore to SwiftData for instant local access
+    /// - Parameter modelContext: SwiftData ModelContext to save users to
+    /// - Note: This is called during login to pre-populate user cache (eliminates network calls during channel switching)
+    @MainActor
+    func syncInitialUsers(modelContext: ModelContext) async throws {
+
+        // Fetch all users from Firestore
+        let usersRef = Firestore.firestore().collection("users")
+        let snapshot = try await usersRef.getDocuments()
+
+        var cachedCount = 0
+        var updatedCount = 0
+
+        for document in snapshot.documents {
+            let userID = document.documentID
+            let userData = document.data()
+
+            // Parse userType with fallback logic
+            let email = userData["email"] as? String ?? ""
+            let userTypeRaw = userData["userType"] as? String
+            let userType: UserType
+            if let userTypeRaw = userTypeRaw, let parsedType = UserType(rawValue: userTypeRaw) {
+                userType = parsedType
+            } else {
+                // Fallback: auto-assign based on email
+                userType = email.lowercased() == "andrewsheim@gmail.com" ? .creator : .fan
+            }
+
+            // Check if user exists in SwiftData
+            let descriptor = FetchDescriptor<UserEntity>(
+                predicate: #Predicate { $0.id == userID }
+            )
+
+            let existing = try? modelContext.fetch(descriptor).first
+
+            if existing == nil {
+                // New user - insert into SwiftData
+                let user = UserEntity(
+                    id: userID,
+                    email: email,
+                    displayName: userData["displayName"] as? String ?? "",
+                    photoURL: userData["photoURL"] as? String,
+                    userType: userType
+                )
+                modelContext.insert(user)
+                cachedCount += 1
+            } else if let existing = existing {
+                // Update existing user with latest data
+                existing.email = email
+                existing.displayName = userData["displayName"] as? String ?? ""
+                existing.photoURL = userData["photoURL"] as? String
+                existing.userType = userType
+                updatedCount += 1
+            }
+        }
+
+        // Save all changes to SwiftData
+        try modelContext.save()
+
+    }
+
     /// Ensures user is in all default channels (idempotent - safe to call multiple times)
     /// - Parameter userID: User ID to add to channels
     /// - Note: This is called on app launch to handle users who signed up before auto-join was implemented
     nonisolated func ensureUserInDefaultChannels(userID: String) async throws {
         let defaultChannelIDs = ["general", "announcements", "off-topic"]
 
-        print("🔵 [CHANNELS] Ensuring user \(userID) is in default channels...")
 
         for channelID in defaultChannelIDs {
             // Check if user is already in channel (RTDB check)
@@ -186,21 +372,17 @@ final class ConversationService {
             let snapshot = try await participantRef.getData()
 
             if snapshot.exists() {
-                print("✅ [CHANNELS] User already in \(channelID)")
                 continue
             }
 
             // User not in channel - add them
-            print("➕ [CHANNELS] Adding user to \(channelID)")
             do {
                 try await addUserToChannel(userID: userID, channelID: channelID)
             } catch {
                 // Log but don't fail - allow app to continue
-                print("⚠️ [CHANNELS] Failed to add user to \(channelID): \(error.localizedDescription)")
             }
         }
 
-        print("✅ [CHANNELS] User ensured in all default channels")
     }
 
     /// Adds a user to a channel by updating participantIDs in Firestore and RTDB
@@ -217,13 +399,11 @@ final class ConversationService {
             "participantIDs": FieldValue.arrayUnion([userID])
         ])
 
-        print("✅ User \(userID) added to channel \(channelID) in Firestore")
 
         // 2. Update RTDB conversation (convert array to object format for security rules)
         let rtdbRef = database.child("conversations/\(channelID)/participantIDs/\(userID)")
         try await rtdbRef.setValue(true)
 
-        print("✅ User \(userID) added to channel \(channelID) in RTDB")
     }
 
     /// Auto-joins user to all default channels on signup
@@ -232,18 +412,15 @@ final class ConversationService {
     nonisolated func autoJoinDefaultChannels(userID: String) async throws {
         let defaultChannelIDs = ["general", "announcements", "off-topic"]
 
-        print("🔵 Auto-joining user \(userID) to default channels...")
 
         for channelID in defaultChannelIDs {
             do {
                 try await addUserToChannel(userID: userID, channelID: channelID)
             } catch {
                 // Log but don't fail - allow signup to succeed even if auto-join fails
-                print("⚠️ Failed to add user to channel \(channelID): \(error.localizedDescription)")
             }
         }
 
-        print("✅ User \(userID) auto-joined to default channels")
     }
 
     // MARK: - Auto-Create DM with Creator
@@ -259,7 +436,6 @@ final class ConversationService {
         fanUserID: String,
         creatorEmail: String
     ) async throws -> String {
-        print("🔵 [CONVERSATION] Auto-creating DM between fan \(fanUserID) and creator \(creatorEmail)")
 
         // 1. Find creator user in Firestore
         let snapshot = try await Firestore.firestore()
@@ -269,7 +445,6 @@ final class ConversationService {
             .getDocuments()
 
         guard let creatorDoc = snapshot.documents.first else {
-            print("❌ [CONVERSATION] Creator not found: \(creatorEmail)")
             throw NSError(domain: "ConversationService", code: 404, userInfo: [
                 NSLocalizedDescriptionKey: "Creator not found"
             ])
@@ -281,14 +456,12 @@ final class ConversationService {
         let participants = [fanUserID, creatorID].sorted()
         let conversationID = participants.joined(separator: "_")
 
-        print("🔵 [CONVERSATION] Generated conversation ID: \(conversationID)")
 
         // 3. Check if conversation already exists in RTDB
         let conversationRef = database.child("conversations/\(conversationID)")
         let existingSnapshot = try await conversationRef.getData()
 
         if existingSnapshot.exists() {
-            print("✅ [CONVERSATION] DM already exists: \(conversationID)")
             return conversationID
         }
 
@@ -309,7 +482,6 @@ final class ConversationService {
         ]
 
         try await conversationRef.setValue(conversationData)
-        print("✅ [CONVERSATION] Created DM in RTDB: \(conversationID)")
 
         return conversationID
     }
@@ -338,7 +510,6 @@ final class ConversationService {
         ]
 
         try await messageRef.setValue(messageData)
-        print("✅ System message sent to RTDB: \(messageID)")
     }
 
     /// Sends a welcome message from the creator to a new fan
@@ -365,7 +536,6 @@ final class ConversationService {
         ]
 
         try await messageRef.setValue(messageData)
-        print("✅ [CONVERSATION] Welcome message sent from \(senderID) to conversation \(conversationID)")
 
         // Update conversation's lastMessage and lastMessageTimestamp
         let conversationRef = database.child("conversations/\(conversationID)")

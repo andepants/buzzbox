@@ -44,7 +44,6 @@ final class NetworkMonitor: ObservableObject {
                 self?.isCellular = path.isExpensive
                 self?.isConstrained = path.isConstrained
 
-                print("📡 Network status: \(path.status == .satisfied ? "Connected" : "Offline")")
             }
         }
         monitor.start(queue: queue)

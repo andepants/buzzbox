@@ -172,7 +172,6 @@ struct RecipientPickerView: View {
         defer { isLoading = false }
 
         guard let currentUserID = Auth.auth().currentUser?.uid else {
-            print("❌ No authenticated user")
             return
         }
 
@@ -207,10 +206,8 @@ struct RecipientPickerView: View {
 
             // Sort by display name
             users = fetchedUsers.sorted { $0.displayName < $1.displayName }
-            print("✅ Loaded \(users.count) users from Firestore")
 
         } catch {
-            print("❌ Failed to load users from Firestore: \(error)")
             users = []
         }
     }
@@ -220,6 +217,5 @@ struct RecipientPickerView: View {
 
 #Preview {
     RecipientPickerView(onSelect: { userID in
-        print("Selected user: \(userID)")
     }, currentUser: nil)
 }

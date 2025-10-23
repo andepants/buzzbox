@@ -272,7 +272,6 @@ struct GroupCreationView: View {
                 try? modelContext.save()
             }
 
-            print("✅ Group created: \(conversationID)")
 
             // Dismiss view
             await MainActor.run {
@@ -286,7 +285,6 @@ struct GroupCreationView: View {
                 errorMessage = "Failed to create channel: \(error.localizedDescription)"
                 showError = true
             }
-            print("❌ Channel creation failed: \(error)")
         }
     }
 
@@ -313,14 +311,12 @@ struct GroupCreationView: View {
                 try? modelContext.save()
             }
 
-            print("✅ Group photo uploaded: \(downloadURL)")
 
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to upload photo: \(error.localizedDescription)"
                 showError = true
             }
-            print("❌ Photo upload failed: \(error)")
         }
 
         await MainActor.run {

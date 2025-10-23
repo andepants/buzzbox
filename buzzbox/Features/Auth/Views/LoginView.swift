@@ -64,7 +64,7 @@ struct LoginView: View {
             .onChange(of: viewModel.isAuthenticated) { _, isAuthenticated in
                 if isAuthenticated {
                     // Success haptic feedback
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    HapticFeedback.notification(.success)
                 }
             }
             .sheet(isPresented: $showForgotPassword) {

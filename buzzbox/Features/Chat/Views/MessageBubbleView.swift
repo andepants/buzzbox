@@ -59,55 +59,6 @@ struct MessageBubbleView: View {
         conversation.isGroup && !isFromCurrentUser && !message.isSystemMessage
     }
 
-    /// Check if inline read receipt should be shown (only for 1:1 DMs)
-    private var shouldShowInlineReadReceipt: Bool {
-        // Only show for own messages in 1:1 conversations
-        guard isFromCurrentUser && !conversation.isGroup && !message.isSystemMessage else {
-            return false
-        }
-
-        // Get recipient ID (the other person in the DM)
-        guard let currentUserID = Auth.auth().currentUser?.uid else { return false }
-        guard let recipientID = conversation.participantIDs.first(where: { $0 != currentUserID }) else {
-            return false
-        }
-
-        // Check if recipient has read the message
-        return message.readBy[recipientID] != nil
-    }
-
-    /// Format read receipt text (e.g., "Read at 2:34 PM" or "Read yesterday at 2:34 PM")
-    private var readReceiptText: String {
-        guard let currentUserID = Auth.auth().currentUser?.uid else { return "" }
-        guard let recipientID = conversation.participantIDs.first(where: { $0 != currentUserID }) else {
-            return ""
-        }
-        guard let readAt = message.readBy[recipientID] else { return "" }
-
-        let calendar = Calendar.current
-
-        // Check if read today
-        if calendar.isDateInToday(readAt) {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            return "Read at \(formatter.string(from: readAt))"
-        }
-
-        // Check if read yesterday
-        if calendar.isDateInYesterday(readAt) {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .none
-            formatter.timeStyle = .short
-            return "Read yesterday at \(formatter.string(from: readAt))"
-        }
-
-        // Otherwise show full date and time
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return "Read \(formatter.string(from: readAt))"
-    }
 
     // MARK: - Body
 
@@ -148,7 +99,6 @@ struct MessageBubbleView: View {
                     Text(senderDisplayName)
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
-                        .padding(.leading, 16)
                         .padding(.bottom, 2)
                 }
 
@@ -173,14 +123,6 @@ struct MessageBubbleView: View {
                             .animation(.easeInOut(duration: 0.2), value: message.status)
                             .animation(.easeInOut(duration: 0.2), value: message.syncStatus)
                     }
-                }
-
-                // Inline read receipt (only for 1:1 DMs)
-                if shouldShowInlineReadReceipt {
-                    Text(readReceiptText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .transition(.opacity)
                 }
             }
 

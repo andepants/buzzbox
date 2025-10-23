@@ -1,124 +1,18 @@
 rules_version = '2';
 
+// ============================================
+// DEVELOPMENT-ONLY WIDE OPEN RULES
+// WARNING: These rules are COMPLETELY INSECURE and allow ALL access
+// ONLY use for development/testing - NEVER in production!
+// TODO: Replace with production rules before launch
+// ============================================
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ============================================
-    // HELPER FUNCTIONS
-    // ============================================
-
-    /// Check if a user is the creator (Andrew)
-    function isCreator(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data.userType == 'creator';
-    }
-
-    /// Check if a user is a fan
-    function isFan(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data.userType == 'fan';
-    }
-
-    /// Validate DM restrictions (Story 5.4)
-    /// - Fans can only DM creator
-    /// - Creator can DM anyone
-    /// - Both fans cannot DM each other
-    function validateDMRestrictions(participantIDs) {
-      // For group conversations (more than 2 participants), allow
-      let isGroup = participantIDs.size() > 2;
-
-      // If it's a DM (2 participants), enforce restrictions
-      let isDM = participantIDs.size() == 2;
-
-      return isGroup || (isDM && (
-        // At least one participant must be creator
-        isCreator(participantIDs[0]) || isCreator(participantIDs[1])
-      ));
-    }
-
-    // ============================================
-    // DISPLAY NAMES COLLECTION (Public Read)
-    // ============================================
-    // This collection is INTENTIONALLY public for username availability checks
-    // ONLY stores: { userId: string, createdAt: timestamp }
-    // NO sensitive user data should be stored here
-
-    match /displayNames/{displayName} {
-      // Allow ANYONE (even unauthenticated) to read to check availability
-      allow read: if true;
-
-      // Allow authenticated users to create their own display name claim
-      allow create: if request.auth != null
-                    && request.resource.data.userId == request.auth.uid
-                    && request.resource.data.keys().hasOnly(['userId', 'createdAt']);
-
-      // Prevent updates (display names are immutable once claimed)
-      allow update: if false;
-
-      // Allow users to delete ONLY their own display name claim
-      allow delete: if request.auth != null
-                    && resource.data.userId == request.auth.uid;
-    }
-
-    // ============================================
-    // USERS COLLECTION (User Discovery Enabled)
-    // ============================================
-    // User profiles - Readable by all authenticated users for discovery
-    // Writable only by the owner
-
-    match /users/{userId} {
-      // Allow authenticated users to list and read user profiles for discovery
-      allow list, get: if request.auth != null;
-
-      // Users can only create their own profile with valid userType and isPublic
-      allow create: if request.auth != null
-                    && request.auth.uid == userId
-                    && request.resource.data.userType is string
-                    && request.resource.data.userType in ['creator', 'fan']
-                    && request.resource.data.isPublic is bool;
-
-      // Users can only update their own profile, but CANNOT change userType or isPublic
-      allow update: if request.auth != null
-                    && request.auth.uid == userId
-                    && request.resource.data.userType == resource.data.userType
-                    && request.resource.data.isPublic == resource.data.isPublic;
-
-      // Users can delete their own profile
-      allow delete: if request.auth != null && request.auth.uid == userId;
-    }
-
-    // ============================================
-    // CONVERSATIONS & MESSAGES (Private)
-    // ============================================
-    // Story 5.4: DM restrictions - fans can only DM creator
-
-    match /conversations/{conversationId} {
-      // Allow reading conversations if user is a participant
-      allow read: if request.auth != null
-                  && request.auth.uid in resource.data.participantIDs;
-
-      // Allow creating conversations with DM restrictions
-      allow create: if request.auth != null
-                    && request.auth.uid in request.resource.data.participantIDs
-                    && validateDMRestrictions(request.resource.data.participantIDs);
-
-      // Allow updating conversations if user is a participant
-      allow update: if request.auth != null
-                    && request.auth.uid in resource.data.participantIDs;
-
-      // Allow deleting conversations if user is a participant
-      allow delete: if request.auth != null
-                    && request.auth.uid in resource.data.participantIDs;
-    }
-
-    match /messages/{messageId} {
-      allow read, write: if false; // TODO: Add proper rules in Epic 2
-    }
-
-    // ============================================
-    // DEFAULT DENY ALL
-    // ============================================
-    // Explicitly deny access to any other collections
-
+    // Allow EVERYONE (authenticated AND unauthenticated) to read/write EVERYTHING
+    // This includes signup flows where users aren't authenticated yet
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }

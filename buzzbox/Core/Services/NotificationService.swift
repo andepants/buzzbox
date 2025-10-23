@@ -26,6 +26,14 @@ class NotificationService {
 
     /// Currently visible conversation (prevents notif for current chat)
     var currentConversationID: String?
+    
+    // MARK: - Retry Configuration
+    
+    /// Maximum number of retry attempts for failed notifications
+    private let maxRetryAttempts = 3
+    
+    /// Retry delays (in seconds) for each attempt - exponential backoff
+    private let retryDelays: [Double] = [0.5, 1.0, 2.0]
 
     // MARK: - Models
 
@@ -84,61 +92,152 @@ class NotificationService {
 
     // MARK: - Public Methods
 
-    /// Shows an in-app notification banner (works on simulator)
+    /// Shows an in-app notification banner (works on simulator) with retry logic
     func showInAppNotification(
         title: String,
         body: String,
         conversationID: String
     ) async {
+        
+        // Check if user is viewing this conversation in UserPresenceService
+        let userCurrentScreen = UserPresenceService.shared.getCurrentConversationID()
+
         // Don't show if user is already viewing this conversation
-        guard conversationID != currentConversationID else { return }
+        if conversationID == currentConversationID || conversationID == userCurrentScreen {
+            return
+        }
+        
+        // Attempt with retry logic
+        for attempt in 1...maxRetryAttempts {
+            do {
+                
+                // Create notification
+                let notification = InAppNotification(
+                    title: title,
+                    body: body,
+                    conversationID: conversationID,
+                    timestamp: Date()
+                )
 
-        // Create notification
-        let notification = InAppNotification(
-            title: title,
-            body: body,
-            conversationID: conversationID,
-            timestamp: Date()
-        )
+                activeNotification = notification
+                
+                // Log notification attempt
+                logNotificationAttempt(
+                    type: "in-app-banner",
+                    conversationID: conversationID,
+                    attempt: attempt,
+                    success: true,
+                    error: nil
+                )
 
-        activeNotification = notification
-
-        // Auto-dismiss after 5 seconds
-        try? await Task.sleep(nanoseconds: 5_000_000_000)
-        if activeNotification?.id == notification.id {
-            activeNotification = nil
+                // Auto-dismiss after 5 seconds
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                if activeNotification?.id == notification.id {
+                    activeNotification = nil
+                }
+                
+                return // Success, exit retry loop
+                
+            } catch {
+                
+                // Log failed attempt
+                logNotificationAttempt(
+                    type: "in-app-banner",
+                    conversationID: conversationID,
+                    attempt: attempt,
+                    success: false,
+                    error: error
+                )
+                
+                // If not last attempt, wait before retrying
+                if attempt < maxRetryAttempts {
+                    let delay = retryDelays[attempt - 1]
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                } else {
+                }
+            }
         }
     }
 
-    /// Schedule a local notification (works on simulator)
+    /// Schedule a local notification (works on simulator) with retry logic
     func scheduleLocalNotification(
         title: String,
         body: String,
         conversationID: String
     ) async {
+
+        // Check if user is viewing this conversation in UserPresenceService
+        let userCurrentScreen = UserPresenceService.shared.getCurrentConversationID()
+
         // Don't schedule if user is viewing this conversation
-        guard conversationID != currentConversationID else { return }
+        if conversationID == currentConversationID || conversationID == userCurrentScreen {
+            return
+        }
+        
+        // Check notification authorization status
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        
+        if settings.authorizationStatus == .denied {
+            logNotificationAttempt(
+                type: "local-notification",
+                conversationID: conversationID,
+                attempt: 1,
+                success: false,
+                error: NSError(domain: "NotificationService", code: 1, userInfo: [NSLocalizedDescriptionKey: "Notifications denied by user"])
+            )
+            return
+        }
 
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        content.sound = .default
-        content.badge = 1
-        content.userInfo = ["conversationID": conversationID]
+        // Attempt with retry logic
+        for attempt in 1...maxRetryAttempts {
+            do {
+                
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = body
+                content.sound = .default
+                content.badge = 1
+                content.userInfo = ["conversationID": conversationID]
 
-        // Schedule immediately
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: trigger
-        )
+                // Schedule immediately
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+                let request = UNNotificationRequest(
+                    identifier: UUID().uuidString,
+                    content: content,
+                    trigger: trigger
+                )
 
-        do {
-            try await UNUserNotificationCenter.current().add(request)
-            print("✅ Local notification scheduled: \(title)")
-        } catch {
-            print("❌ Failed to schedule local notification: \(error)")
+                try await UNUserNotificationCenter.current().add(request)
+                
+                // Log success
+                logNotificationAttempt(
+                    type: "local-notification",
+                    conversationID: conversationID,
+                    attempt: attempt,
+                    success: true,
+                    error: nil
+                )
+                
+                return // Success, exit retry loop
+                
+            } catch {
+                
+                // Log failed attempt
+                logNotificationAttempt(
+                    type: "local-notification",
+                    conversationID: conversationID,
+                    attempt: attempt,
+                    success: false,
+                    error: error
+                )
+                
+                // If not last attempt, wait before retrying
+                if attempt < maxRetryAttempts {
+                    let delay = retryDelays[attempt - 1]
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                } else {
+                }
+            }
         }
     }
 
@@ -150,9 +249,27 @@ class NotificationService {
     /// Sets the currently visible conversation (prevents duplicate notifications)
     func setCurrentConversation(_ conversationID: String?) {
         self.currentConversationID = conversationID
+
         if conversationID != nil {
             // Clear badge when viewing a conversation
             clearBadge()
+        }
+    }
+    
+    // MARK: - Private Helpers
+    
+    /// Logs notification attempt for debugging
+    private func logNotificationAttempt(
+        type: String,
+        conversationID: String,
+        attempt: Int,
+        success: Bool,
+        error: Error?
+    ) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let currentUserID = Auth.auth().currentUser?.uid ?? "unknown"
+        
+        if let error = error {
         }
     }
 }

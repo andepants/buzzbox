@@ -179,7 +179,6 @@ struct AddParticipantsView: View {
             availableUsers = users.sorted { $0.displayName < $1.displayName }
 
         } catch {
-            print("❌ Error loading available users: \(error)")
             errorMessage = "Failed to load contacts"
         }
     }
@@ -199,7 +198,6 @@ struct AddParticipantsView: View {
             }
 
             guard !newUserIDs.isEmpty else {
-                print("⚠️ All selected users already in group")
                 errorMessage = "Selected users are already in the group"
                 return
             }
@@ -236,13 +234,11 @@ struct AddParticipantsView: View {
                 messageID: UUID().uuidString
             )
 
-            print("✅ Added \(newUserIDs.count) participants to group")
 
             // Dismiss sheet
             dismiss()
 
         } catch {
-            print("❌ Error adding participants: \(error)")
             errorMessage = "Failed to add participants"
         }
     }

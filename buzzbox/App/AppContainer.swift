@@ -46,16 +46,12 @@ final class AppContainer {
                 for: schema,
                 configurations: [modelConfiguration]
             )
-            print("✅ AppContainer initialized successfully")
         } catch {
             // If schema migration fails during development, try to delete and recreate
-            print("⚠️ ModelContainer creation failed: \(error)")
-            print("⚠️ Attempting to recreate ModelContainer with fresh database...")
 
             // Try to get the default store URL and delete it
             let url = modelConfiguration.url
             try? FileManager.default.removeItem(at: url)
-            print("🗑️ Deleted old database at: \(url)")
 
             // Try again with fresh database
             do {
@@ -63,7 +59,6 @@ final class AppContainer {
                     for: schema,
                     configurations: [modelConfiguration]
                 )
-                print("✅ AppContainer recreated successfully with fresh database")
             } catch {
                 fatalError("❌ Could not create ModelContainer even after cleanup: \(error)")
             }

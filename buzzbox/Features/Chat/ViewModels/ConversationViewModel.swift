@@ -74,14 +74,7 @@ final class ConversationViewModel {
             throw error
         } catch {
             // Log the actual error for debugging
-            print("❌ [DM-CREATE] Unexpected error in createDMWithCreator:")
-            print("   Error type: \(type(of: error))")
-            print("   Error: \(error)")
-            print("   Localized description: \(error.localizedDescription)")
             if let nsError = error as? NSError {
-                print("   Domain: \(nsError.domain)")
-                print("   Code: \(nsError.code)")
-                print("   User info: \(nsError.userInfo)")
             }
 
             let convError = ConversationError.creationFailed
@@ -100,95 +93,72 @@ final class ConversationViewModel {
         withUserID userID: String,
         currentUserID: String
     ) async throws -> ConversationEntity {
-        print("🔵 [CONVERSATION] Creating conversation: current=\(currentUserID), recipient=\(userID)")
         isLoading = true
         defer { isLoading = false }
 
         // Step 1: Validate recipient exists
-        print("🔵 [CONVERSATION] Step 1: Fetching recipient user...")
-        guard let recipient = try? await conversationService.getUser(userID: userID) else {
-            print("❌ [CONVERSATION] Recipient not found: \(userID)")
+        guard let recipient = try? await conversationService.getUser(userID: userID, modelContext: modelContext) else {
             let error = ConversationError.recipientNotFound
             self.error = error
             throw error
         }
-        print("✅ [CONVERSATION] Recipient found: \(recipient.email) (type: \(recipient.userType.rawValue))")
 
         // Step 2: Validate current user exists
-        print("🔵 [CONVERSATION] Step 2: Fetching current user...")
-        guard let sender = try? await conversationService.getUser(userID: currentUserID) else {
-            print("❌ [CONVERSATION] Sender not found: \(currentUserID)")
+        guard let sender = try? await conversationService.getUser(userID: currentUserID, modelContext: modelContext) else {
             let error = ConversationError.recipientNotFound
             self.error = error
             throw error
         }
-        print("✅ [CONVERSATION] Sender found: \(sender.email) (type: \(sender.userType.rawValue))")
 
         // Step 3: Validate DM permissions (Story 5.4)
-        print("🔵 [CONVERSATION] Step 3: Validating DM permissions...")
         do {
             try conversationService.canCreateDM(from: sender, to: recipient)
-            print("✅ [CONVERSATION] DM permissions validated")
         } catch let dmError as DMValidationError {
-            print("❌ [CONVERSATION] DM validation failed: \(dmError.localizedDescription)")
             let error = ConversationError.dmRestricted(dmError.localizedDescription)
             self.error = error
             throw error
         }
 
         // Step 4: Check if user is blocked
-        print("🔵 [CONVERSATION] Step 4: Checking blocked status...")
         if try await conversationService.isBlocked(userID: userID, currentUserID: currentUserID) {
-            print("❌ [CONVERSATION] User is blocked")
             let error = ConversationError.userBlocked
             self.error = error
             throw error
         }
-        print("✅ [CONVERSATION] User not blocked")
 
         // Step 5: Generate deterministic conversation ID
         // Pattern: sorted participant IDs joined with underscore
         // Example: "user123_user456" (always same regardless of who initiates)
         let participants = [currentUserID, userID].sorted()
         let conversationID = participants.joined(separator: "_")
-        print("🔵 [CONVERSATION] Step 5: Generated conversation ID: \(conversationID)")
 
         // Step 6: Check local SwiftData first (optimistic)
-        print("🔵 [CONVERSATION] Step 6: Checking local SwiftData...")
         let localDescriptor = FetchDescriptor<ConversationEntity>(
             predicate: #Predicate { $0.id == conversationID }
         )
 
         if let existing = try? modelContext.fetch(localDescriptor).first {
-            print("✅ [CONVERSATION] Found existing conversation locally: \(conversationID)")
             return existing
         }
-        print("🔵 [CONVERSATION] No existing conversation found locally")
 
         // Step 7: Check RTDB for existing conversation (handles simultaneous creation)
-        print("🔵 [CONVERSATION] Step 7: Checking RTDB for existing conversation...")
         do {
             if let remoteConversation = try await conversationService.findConversation(id: conversationID) {
-                print("✅ [CONVERSATION] Found existing conversation in RTDB: \(conversationID)")
                 // Sync remote conversation to local SwiftData
                 modelContext.insert(remoteConversation)
                 try modelContext.save()
 
                 // Haptic feedback
                 #if os(iOS)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                HapticFeedback.impact(.light)
                 #endif
 
-                print("✅ [CONVERSATION] Synced remote conversation to local: \(conversationID)")
                 return remoteConversation
             }
-            print("🔵 [CONVERSATION] No existing conversation in RTDB")
         } catch {
-            print("⚠️ [CONVERSATION] Error checking RTDB (will create new): \(error)")
         }
 
         // Step 8: Create new conversation
-        print("🔵 [CONVERSATION] Step 8: Creating new conversation entity...")
         let conversation = ConversationEntity(
             id: conversationID, // Deterministic!
             participantIDs: participants,
@@ -199,18 +169,14 @@ final class ConversationViewModel {
         )
 
         // Step 9: Save locally first (optimistic UI)
-        print("🔵 [CONVERSATION] Step 9: Saving conversation to SwiftData...")
         do {
             modelContext.insert(conversation)
             try modelContext.save()
-            print("✅ [CONVERSATION] Created new conversation locally: \(conversationID)")
         } catch {
-            print("❌ [CONVERSATION] Failed to save conversation to SwiftData: \(error)")
             throw error
         }
 
         // Step 10: Sync to RTDB in background
-        print("🔵 [CONVERSATION] Step 10: Starting background RTDB sync...")
         Task { @MainActor in
             do {
                 try await conversationService.syncConversation(conversation)
@@ -219,14 +185,10 @@ final class ConversationViewModel {
 
                 // Haptic feedback
                 #if os(iOS)
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                HapticFeedback.impact(.light)
                 #endif
 
-                print("✅ [CONVERSATION] Conversation synced to RTDB: \(conversationID)")
             } catch {
-                print("❌ [CONVERSATION] Failed to sync conversation to RTDB:")
-                print("   Error: \(error)")
-                print("   Localized: \(error.localizedDescription)")
                 conversation.syncStatus = .failed
                 self.error = .creationFailed
                 try? modelContext.save()
@@ -242,11 +204,9 @@ final class ConversationViewModel {
     /// [Source: Story 2.2 - Real-time RTDB listener]
     func startRealtimeListener() async {
         guard let currentUserID = Auth.auth().currentUser?.uid else {
-            print("⚠️ Cannot start listener: No authenticated user")
             return
         }
 
-        print("🎧 [LISTENER] Starting RTDB listener for user: \(currentUserID)")
 
         // Ensure user is in default channels (handles existing users + new users)
         // This is idempotent and safe to call on every app launch
@@ -254,20 +214,26 @@ final class ConversationViewModel {
             try await conversationService.ensureUserInDefaultChannels(userID: currentUserID)
         } catch {
             // Log but don't fail - allow app to continue
-            print("⚠️ [LISTENER] Failed to ensure user in channels (non-critical): \(error.localizedDescription)")
         }
 
         let conversationsRef = Database.database().reference().child("conversations")
 
+        // FORCE INITIAL DATA LOAD: Get snapshot immediately before setting up listener
+        // This eliminates race condition between @Query and listener
+        do {
+            let initialSnapshot = try await conversationsRef.getData()
+            await processConversationSnapshot(initialSnapshot, currentUserID: currentUserID)
+        } catch {
+        }
+
+        // Now set up real-time listener for ongoing updates
         realtimeListenerHandle = conversationsRef.observe(.value) { [weak self] snapshot in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                print("📡 [LISTENER] Received snapshot with \(snapshot.childrenCount) conversations")
                 await self.processConversationSnapshot(snapshot, currentUserID: currentUserID)
             }
         }
 
-        print("👂 Started real-time RTDB listener for conversations")
     }
 
     /// Stops the real-time RTDB listener
@@ -275,7 +241,6 @@ final class ConversationViewModel {
         if let handle = realtimeListenerHandle {
             Database.database().reference().child("conversations").removeObserver(withHandle: handle)
             realtimeListenerHandle = nil
-            print("🛑 Stopped real-time RTDB listener")
         }
     }
 
@@ -291,10 +256,8 @@ final class ConversationViewModel {
         do {
             let snapshot = try await conversationsRef.getData()
             await processConversationSnapshot(snapshot, currentUserID: currentUserID)
-            print("🔄 Manual sync complete")
         } catch {
             self.error = .networkError
-            print("❌ Manual sync failed: \(error)")
         }
     }
 
@@ -388,7 +351,6 @@ final class ConversationViewModel {
         }
 
         if processedCount > 0 || skippedCount > 0 {
-            print("✅ [SYNC] \(processedCount) synced, \(skippedCount) skipped")
         }
     }
 
@@ -399,7 +361,6 @@ final class ConversationViewModel {
         // Database reference calls are safe to make from any thread
         if let handle = realtimeListenerHandle {
             Database.database().reference().child("conversations").removeObserver(withHandle: handle)
-            print("🛑 Stopped real-time RTDB listener (deinit)")
         }
     }
 }

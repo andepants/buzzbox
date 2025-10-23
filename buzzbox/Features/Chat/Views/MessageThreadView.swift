@@ -24,10 +24,11 @@ struct MessageThreadView: View {
 
     @State private var viewModel: MessageThreadViewModel
     @EnvironmentObject var networkMonitor: NetworkMonitor
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var messageText = ""
     @FocusState private var isInputFocused: Bool
-    @State private var recipientDisplayName: String = "Loading..."
+    @State private var recipientDisplayName: String
 
     // Typing indicator state
     @State private var typingUserIDs: Set<String> = []
@@ -73,6 +74,12 @@ struct MessageThreadView: View {
             conversationID: conversationID,
             modelContext: context
         ))
+
+        // ⚡️ OPTIMIZED: Set display name immediately for channels (no async load needed)
+        // For DMs, loadRecipientName() will update this asynchronously
+        _recipientDisplayName = State(initialValue: conversation.isGroup
+            ? (conversation.displayName ?? "Group Chat")
+            : "Loading...")
     }
 
     // MARK: - Computed Properties
@@ -157,6 +164,13 @@ struct MessageThreadView: View {
                             )
                         }
                     }
+
+                    // Auto-mark new messages as read when chat is open
+                    if newCount > oldCount {
+                        Task {
+                            await markVisibleMessagesAsRead()
+                        }
+                    }
                 }
             }
 
@@ -222,20 +236,23 @@ struct MessageThreadView: View {
             }
         }
         .task {
-            print("📱 [THREAD] MessageThreadView opened for: \(conversation.displayName ?? conversation.id)")
-            print("  🔐 Initial isCreatorOnly state: \(conversation.isCreatorOnly)")
 
             // Notify NotificationService that user is viewing this conversation
             // (prevents duplicate in-app notifications for this conversation)
             NotificationService.shared.setCurrentConversation(conversation.id)
 
-            // Check creator-only posting permission
-            await checkPostingPermission()
+            // Update user presence in RTDB with current screen
+            // (allows Cloud Functions to know user is actively viewing this conversation)
+            await UserPresenceService.shared.updateCurrentScreen(conversationID: conversation.id)
 
-            // Load participants for typing indicator display
-            await loadParticipants()
+            // ⚡️ OPTIMIZED: Run independent operations in parallel
+            async let permissionCheck: Void = checkPostingPermission()
+            async let participantsLoad: Void = loadParticipants()
+            async let recipientNameLoad: Void = loadRecipientName()
+            async let presenceStart: Void = startPresenceListener()
+            async let realtimeStart: Void = viewModel.startRealtimeListener()
 
-            // Start typing listener
+            // Start typing listener (synchronous, no await needed)
             typingListenerHandle = TypingIndicatorService.shared.listenToTypingIndicators(
                 conversationID: conversation.id
             ) { userIDs in
@@ -244,22 +261,32 @@ struct MessageThreadView: View {
                 }
             }
 
-            // Start presence listener
-            await startPresenceListener()
-
-            // Start read receipt listener
+            // Start read receipt listener (synchronous)
             startReadReceiptListener()
 
-            // Mark all visible messages as read
-            await markVisibleMessagesAsRead()
+            // Wait for all parallel operations to complete
+            await (permissionCheck, participantsLoad, recipientNameLoad, presenceStart, realtimeStart)
 
-            await loadRecipientName()
-            await viewModel.startRealtimeListener()
-            await viewModel.markAsRead()
+            // Mark messages as read after everything is loaded
+            await markVisibleMessagesAsRead()
+        }
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            // Mark messages as read when app comes to foreground with chat open
+            if newPhase == .active && oldPhase != .active {
+                Task {
+                    await markVisibleMessagesAsRead()
+                }
+            }
         }
         .onDisappear {
+
             // Clear current conversation tracking for notifications
             NotificationService.shared.setCurrentConversation(nil)
+
+            // Clear user presence screen tracking in RTDB
+            Task {
+                await UserPresenceService.shared.updateCurrentScreen(conversationID: nil)
+            }
 
             // Cleanup: Stop typing
             if let currentUserID = Auth.auth().currentUser?.uid {
@@ -293,21 +320,14 @@ struct MessageThreadView: View {
     /// [Source: Story 5.3 - Channel System]
     private func checkPostingPermission() async {
         guard let currentUserID = Auth.auth().currentUser?.uid else {
-            print("❌ [PERMISSION] No authenticated user")
             canPost = false
             return
         }
 
-        print("🔍 [PERMISSION] Checking posting permission for conversation: \(conversation.displayName ?? conversation.id)")
-        print("  📋 Conversation ID: \(conversation.id)")
-        print("  🔐 isCreatorOnly: \(conversation.isCreatorOnly)")
-        print("  👥 isGroup: \(conversation.isGroup)")
-        print("  🆔 Current User ID: \(currentUserID)")
 
         // ✅ DMs: Always allow posting (both participants can message each other)
         if !conversation.isGroup {
             canPost = true
-            print("  ✅ canPost result: TRUE (DM - always allowed)")
             return
         }
 
@@ -319,24 +339,17 @@ struct MessageThreadView: View {
         do {
             let users = try modelContext.fetch(descriptor)
             guard let currentUser = users.first else {
-                print("❌ [PERMISSION] User not found in SwiftData")
                 canPost = false
                 return
             }
 
-            print("  👤 User email: \(currentUser.email)")
-            print("  🎭 User type: \(currentUser.userType.rawValue)")
-            print("  ⭐ isCreator: \(currentUser.isCreator)")
 
             canPost = conversation.canUserPost(isCreator: currentUser.isCreator)
 
-            print("  ✅ canPost result: \(canPost)")
 
             if !canPost {
-                print("🔒 [PERMISSION] User cannot post to creator-only channel")
             }
         } catch {
-            print("⚠️ [PERMISSION] Failed to check posting permission: \(error.localizedDescription)")
             canPost = false
         }
     }
@@ -360,14 +373,13 @@ struct MessageThreadView: View {
             let cachedUserIDs = Set(participants.map { $0.id })
             let missingUserIDs = participantIDs.filter { !cachedUserIDs.contains($0) }
 
-            // Fetch missing users from Firestore
+            // Fetch missing users from cache/Firestore
             for userID in missingUserIDs {
-                if let userData = try? await ConversationService.shared.getUser(userID: userID) {
+                if let userData = try? await ConversationService.shared.getUser(userID: userID, modelContext: modelContext) {
                     participants.append(userData)
                 }
             }
         } catch {
-            print("⚠️ Failed to load participants: \(error.localizedDescription)")
         }
     }
 
@@ -388,15 +400,12 @@ struct MessageThreadView: View {
                 // Check if user can post to this conversation
                 if !conversation.canUserPost(isCreator: currentUser.isCreator) {
                     // Show error: User cannot post to creator-only channel
-                    print("⚠️ User cannot post to creator-only channel")
                     #if os(iOS)
-                    let generator = UINotificationFeedbackGenerator()
-                    generator.notificationOccurred(.error)
+                    HapticFeedback.notification(.error)
                     #endif
                     return
                 }
             } catch {
-                print("⚠️ Failed to fetch current user: \(error.localizedDescription)")
                 return
             }
         }
@@ -409,8 +418,7 @@ struct MessageThreadView: View {
         } catch {
             // Show error: Empty or too long
             #if os(iOS)
-            let generator = UINotificationFeedbackGenerator()
-            generator.notificationOccurred(.error)
+            HapticFeedback.notification(.error)
             #endif
             return
         }
@@ -423,8 +431,7 @@ struct MessageThreadView: View {
 
         // Haptic feedback
         #if os(iOS)
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
+        HapticFeedback.impact(.light)
         #endif
     }
 
@@ -437,11 +444,8 @@ struct MessageThreadView: View {
     }
 
     private func loadRecipientName() async {
-        // For group channels, use the group's display name directly
-        if conversation.isGroup {
-            recipientDisplayName = conversation.displayName ?? "Group Chat"
-            return
-        }
+        // ⚡️ OPTIMIZED: Only DMs need async load (channels set name in init)
+        guard !conversation.isGroup else { return }
 
         // For DMs, load the recipient's display name
         guard let currentUserID = Auth.auth().currentUser?.uid else { return }
@@ -449,8 +453,8 @@ struct MessageThreadView: View {
             return
         }
 
-        // Load recipient user from SwiftData or RTDB
-        if let recipientUser = try? await ConversationService.shared.getUser(userID: recipientID) {
+        // Load recipient user from SwiftData cache
+        if let recipientUser = try? await ConversationService.shared.getUser(userID: recipientID, modelContext: modelContext) {
             recipientDisplayName = recipientUser.displayName
         }
     }
@@ -526,6 +530,13 @@ struct MessageThreadView: View {
 
             if let message = try? modelContext.fetch(descriptor).first {
                 message.readBy = readByDates
+
+                // Update message status to .read if any user has read it
+                // (sender sees blue checkmarks when recipient has read)
+                if !readByDates.isEmpty && message.status != .read {
+                    message.status = .read
+                }
+
                 try? modelContext.save()
             }
         }

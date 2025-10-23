@@ -28,31 +28,24 @@ final class StorageService {
     func uploadImage(_ image: UIImage, path: String) async throws -> URL {
         // 0. Verify user is authenticated (required by Storage Rules)
         guard let currentUser = auth.currentUser else {
-            print("❌ [STORAGE] Upload failed: User not authenticated")
             throw StorageError.notAuthenticated
         }
 
-        print("✅ [STORAGE] Starting upload for user: \(currentUser.uid)")
-        print("📁 [STORAGE] Upload path: \(path)")
 
         // 1. Compress image to target quality and size
         guard let compressedImage = compressImage(image) else {
-            print("❌ [STORAGE] Image compression failed")
             throw StorageError.imageCompressionFailed
         }
 
-        print("✅ [STORAGE] Image compressed to \(compressedImage.count) bytes")
 
         // 2. Validate file size (5MB max enforced by Storage Rules)
         let maxSize = 5 * 1024 * 1024 // 5MB
         guard compressedImage.count <= maxSize else {
-            print("❌ [STORAGE] File too large: \(compressedImage.count) bytes (max: \(maxSize) bytes)")
             throw StorageError.fileTooLarge
         }
 
         // 3. Create storage reference
         nonisolated(unsafe) let storageRef = storage.reference().child(path)
-        print("📦 [STORAGE] Storage reference created: \(storageRef.fullPath)")
 
         // 4. Upload with metadata
         let metadata = StorageMetadata()
@@ -61,11 +54,7 @@ final class StorageService {
 
         do {
             _ = try await storageRef.putData(compressedImage, metadata: metadata)
-            print("✅ [STORAGE] Upload successful")
         } catch let error as NSError {
-            print("❌ [STORAGE] Upload failed with error code: \(error.code)")
-            print("❌ [STORAGE] Error domain: \(error.domain)")
-            print("❌ [STORAGE] Error description: \(error.localizedDescription)")
 
             // Map Firebase Storage errors to user-friendly messages
             throw StorageError.uploadFailed(
@@ -85,7 +74,6 @@ final class StorageService {
         for attempt in 1...maxAttempts {
             do {
                 downloadURL = try await storageRef.downloadURL()
-                print("✅ [STORAGE] Download URL retrieved on attempt \(attempt): \(downloadURL!.absoluteString)")
                 break
             } catch let error as NSError {
                 lastError = error
@@ -93,10 +81,8 @@ final class StorageService {
                 if attempt < maxAttempts {
                     // Exponential backoff: 500ms, 1s, 2s, 4s
                     let delay = baseDelay * UInt64(1 << (attempt - 1))
-                    print("⚠️ [STORAGE] Download URL attempt \(attempt) failed, retrying in \(Double(delay) / 1_000_000_000)s...")
                     try await Task.sleep(nanoseconds: delay)
                 } else {
-                    print("❌ [STORAGE] Failed to get download URL after \(maxAttempts) attempts: \(error.localizedDescription)")
                     throw StorageError.downloadURLFailed(description: error.localizedDescription)
                 }
             }
@@ -108,7 +94,6 @@ final class StorageService {
 
         // 6. Verify URL is HTTPS (required for Kingfisher & AsyncImage)
         guard finalURL.scheme == "https" else {
-            print("❌ [STORAGE] Invalid URL scheme: \(finalURL.scheme ?? "nil")")
             throw StorageError.invalidDownloadURL
         }
 
@@ -123,13 +108,10 @@ final class StorageService {
                 let (_, response) = try await URLSession.shared.data(for: request)
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
                     urlAccessible = true
-                    print("✅ [STORAGE] URL accessibility verified on attempt \(attempt)")
                     break
                 } else {
-                    print("⚠️ [STORAGE] URL returned non-200 status on attempt \(attempt)")
                 }
             } catch {
-                print("⚠️ [STORAGE] URL accessibility check attempt \(attempt) failed: \(error.localizedDescription)")
             }
 
             if attempt < 3 {
@@ -138,10 +120,8 @@ final class StorageService {
         }
 
         if !urlAccessible {
-            print("⚠️ [STORAGE] Warning: URL accessibility check failed, but proceeding anyway")
         }
 
-        print("🎉 [STORAGE] Upload complete! URL: \(finalURL.absoluteString)")
         return finalURL
     }
 

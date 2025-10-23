@@ -47,15 +47,17 @@ final class MessageService {
 
         let timestamp = Date()
 
-        // 1. Update RTDB (server timestamp in milliseconds)
+        // 1. Update RTDB readBy timestamp (server timestamp in milliseconds)
         let messageRef = database
             .child("messages")
             .child(conversationID)
             .child(messageID)
-            .child("readBy")
-            .child(currentUserID)
 
-        try await messageRef.setValue(timestamp.timeIntervalSince1970 * 1000)
+        // Update both readBy and status in a single operation
+        try await messageRef.updateChildValues([
+            "readBy/\(currentUserID)": timestamp.timeIntervalSince1970 * 1000,
+            "status": "read"
+        ])
 
         // 2. Update local SwiftData
         let descriptor = FetchDescriptor<MessageEntity>(
@@ -66,6 +68,7 @@ final class MessageService {
 
         if let message = try? modelContext.fetch(descriptor).first {
             message.readBy[currentUserID] = timestamp
+            message.status = .read
             try? modelContext.save()
         }
     }

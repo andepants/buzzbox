@@ -85,11 +85,9 @@ final class AuthService: ObservableObject {
         displayName: String,
         modelContext: ModelContext
     ) async throws -> User {
-        print("🔵 [AUTH] Starting sign-up for email: \(email), displayName: \(displayName)")
 
         // 1. Validate displayName format (client-side)
         guard isValidDisplayName(displayName) else {
-            print("🔴 [AUTH] Sign-up failed: Invalid display name format")
             throw AuthError.invalidDisplayName
         }
 
@@ -128,7 +126,6 @@ final class AuthService: ObservableObject {
             try await firestore.collection("users").document(uid).setData(userData)
 
             // 7. Create user profile in Realtime Database (for conversation validation)
-            print("🔵 [AUTH] Creating user profile in RTDB...")
             let userRef = database.child("users").child(uid)
             try await userRef.setValue([
                 "email": email,
@@ -138,7 +135,6 @@ final class AuthService: ObservableObject {
                 "isPublic": isPublic,
                 "createdAt": ServerValue.timestamp()
             ])
-            print("✅ [AUTH] User profile created in RTDB")
 
             // 8. Initialize user presence in Realtime Database
             let presenceRef = database.child("userPresence").child(uid)
@@ -161,17 +157,14 @@ final class AuthService: ObservableObject {
             try modelContext.save()
 
             // 10. Auto-join user to default channels
-            print("🔵 [AUTH] Auto-joining user to default channels...")
             do {
                 try await ConversationService.shared.autoJoinDefaultChannels(userID: uid)
             } catch {
                 // Log but don't fail signup - channels are non-critical
-                print("⚠️ [AUTH] Failed to auto-join channels (non-critical): \(error.localizedDescription)")
             }
 
             // 11. Auto-create DM with creator (Andrew) for fans only
             if userType == .fan {
-                print("🔵 [AUTH] Auto-creating DM with creator for new fan...")
                 do {
                     // Create the conversation
                     let conversationID = try await ConversationService.shared.autoCreateDMWithCreator(
@@ -196,11 +189,9 @@ final class AuthService: ObservableObject {
                             conversationID: conversationID,
                             senderID: creatorID
                         )
-                        print("✅ [AUTH] DM created and welcome message sent to conversation \(conversationID)")
                     }
                 } catch {
                     // Log but don't fail signup - DM creation is non-critical
-                    print("⚠️ [AUTH] Failed to auto-create DM with creator (non-critical): \(error.localizedDescription)")
                 }
             }
 
@@ -219,11 +210,9 @@ final class AuthService: ObservableObject {
             self.currentUser = user
             self.isAuthenticated = true
 
-            print("✅ [AUTH] Sign-up successful for uid: \(uid)")
             return user
 
         } catch let error as NSError {
-            print("🔴 [AUTH] Sign-up failed: \(error.localizedDescription)")
 
             // Check if this is a Database error
             if error.domain == "FirebaseDatabase" ||
@@ -289,13 +278,11 @@ final class AuthService: ObservableObject {
         password: String,
         modelContext: ModelContext
     ) async throws -> User {
-        print("🔵 [AUTH] Starting sign-in for email: \(email)")
 
         do {
             // 1. Sign in with Firebase Auth
             let authResult = try await auth.signIn(withEmail: email, password: password)
             let uid = authResult.user.uid
-            print("🔵 [AUTH] Firebase Auth successful for uid: \(uid)")
 
             // 2. Get ID token for Keychain storage
             let idToken = try await authResult.user.getIDToken()
@@ -388,7 +375,6 @@ final class AuthService: ObservableObject {
             try modelContext.save()
 
             // 8. Ensure user exists in Realtime Database (for conversation validation)
-            print("🔵 [AUTH] Writing user profile to RTDB...")
             let userRef = database.child("users").child(uid)
             try await userRef.setValue([
                 "email": userEmail,
@@ -398,7 +384,6 @@ final class AuthService: ObservableObject {
                 "isPublic": isPublic,
                 "updatedAt": ServerValue.timestamp()
             ])
-            print("✅ [AUTH] User profile written to RTDB")
 
             // 9. Update user presence in Realtime Database
             let presenceRef = database.child("userPresence").child(uid)
@@ -407,15 +392,36 @@ final class AuthService: ObservableObject {
                 "lastSeen": ServerValue.timestamp()
             ])
 
-            // 10. Update published state
+            // 10. Ensure user is in default channels (for existing users who logged in before auto-join)
+            do {
+                try await ConversationService.shared.ensureUserInDefaultChannels(userID: uid)
+            } catch {
+                // Log but don't fail login - channels are non-critical
+            }
+
+            // 11. Sync initial channels from RTDB to SwiftData
+            // This ensures channels appear instantly when user reaches ChannelsView
+            do {
+                try await ConversationService.shared.syncInitialChannels(userID: uid, modelContext: modelContext)
+            } catch {
+                // Log but don't fail login - sync will happen via listener
+            }
+
+            // 11a. Sync all users from Firestore to SwiftData
+            // This eliminates network calls during channel switching by caching all user data locally
+            do {
+                try await ConversationService.shared.syncInitialUsers(modelContext: modelContext)
+            } catch {
+                // Log but don't fail login - users will be fetched on-demand
+            }
+
+            // 12. Update published state
             self.currentUser = user
             self.isAuthenticated = true
 
-            print("✅ [AUTH] Sign-in successful for uid: \(uid)")
             return user
 
         } catch let error as NSError {
-            print("🔴 [AUTH] Sign-in failed: \(error.localizedDescription)")
 
             // Check if this is a Database error
             if error.domain == "FirebaseDatabase" ||
@@ -467,9 +473,6 @@ final class AuthService: ObservableObject {
         let nsError = error as NSError
 
         // Log for developers
-        print("🔴 [AUTH-DB-ERROR] \(nsError.domain) | Code: \(nsError.code)")
-        print("   Description: \(nsError.localizedDescription)")
-        print("   User Info: \(nsError.userInfo)")
 
         // Check for permission_denied
         if nsError.localizedDescription.contains("permission_denied") {
@@ -491,12 +494,10 @@ final class AuthService: ObservableObject {
     /// - Returns: User object if auto-login successful, nil if no valid token
     /// - Throws: AuthError if token exists but is invalid
     func autoLogin(modelContext: ModelContext) async throws -> User? {
-        print("🔵 [AUTH] Attempting auto-login...")
 
         // 1. Check Keychain for stored token
         let keychainService = KeychainService()
         guard let token = keychainService.retrieve() else {
-            print("⚠️ [AUTH] No token found in Keychain, auto-login skipped")
             return nil // No token stored, user needs to login
         }
 
@@ -598,7 +599,6 @@ final class AuthService: ObservableObject {
         try modelContext.save()
 
         // 9. Ensure user exists in Realtime Database (for conversation validation)
-        print("🔵 [AUTH] Syncing user profile to RTDB...")
         let userRef = database.child("users").child(uid)
         try await userRef.setValue([
             "email": email,
@@ -608,7 +608,6 @@ final class AuthService: ObservableObject {
             "isPublic": isPublic,
             "updatedAt": ServerValue.timestamp()
         ])
-        print("✅ [AUTH] User profile synced to RTDB")
 
         // 10. Update user presence in Realtime Database
         let presenceRef = database.child("userPresence").child(uid)
@@ -617,11 +616,25 @@ final class AuthService: ObservableObject {
             "lastSeen": ServerValue.timestamp()
         ])
 
-        // 11. Update published state
+        // 11. Ensure user is in default channels (for existing users)
+        do {
+            try await ConversationService.shared.ensureUserInDefaultChannels(userID: uid)
+        } catch {
+            // Log but don't fail auto-login - channels are non-critical
+        }
+
+        // 12. Sync initial channels from RTDB to SwiftData
+        // This ensures channels appear instantly when user reaches ChannelsView
+        do {
+            try await ConversationService.shared.syncInitialChannels(userID: uid, modelContext: modelContext)
+        } catch {
+            // Log but don't fail auto-login - sync will happen via listener
+        }
+
+        // 13. Update published state
         self.currentUser = user
         self.isAuthenticated = true
 
-        print("✅ [AUTH] Auto-login successful for uid: \(uid)")
         return user
     }
 
@@ -665,22 +678,17 @@ final class AuthService: ObservableObject {
     /// Signs out user and cleans up local data
     /// - Note: Non-throwing to ensure cleanup always completes
     func signOut() async throws {
-        print("🔵 [AUTH] Starting sign-out...")
 
         // 1. Remove all Firebase listeners FIRST (prevents post-logout observer fires)
         await UserPresenceService.shared.removeAllListeners()
-        print("✅ [AUTH] Firebase listeners removed")
 
         // 2. Set user offline in Realtime Database (non-blocking, with timeout)
         await UserPresenceService.shared.setOffline()
-        print("✅ [AUTH] User presence set to offline")
 
         // 3. Sign out from Firebase Auth
         do {
             try auth.signOut()
-            print("✅ [AUTH] Firebase Auth sign-out successful")
         } catch {
-            print("🔴 [AUTH] Firebase sign-out failed: \(error)")
             // Don't throw - continue cleanup
         }
 
@@ -688,9 +696,7 @@ final class AuthService: ObservableObject {
         let keychainService = KeychainService()
         do {
             try keychainService.delete()
-            print("✅ [AUTH] Keychain token deleted")
         } catch {
-            print("⚠️ [AUTH] Keychain deletion failed (non-critical): \(error)")
             // Continue cleanup even if Keychain fails
         }
 
@@ -699,13 +705,11 @@ final class AuthService: ObservableObject {
             KingfisherManager.shared.cache.clearMemoryCache()
             KingfisherManager.shared.cache.clearDiskCache()
         }.value
-        print("✅ [AUTH] Kingfisher cache cleared")
 
         // 6. Update published state (always succeeds)
         self.currentUser = nil
         self.isAuthenticated = false
 
-        print("✅ [AUTH] Sign-out completed successfully")
     }
 
     // MARK: - Profile Management
@@ -757,12 +761,9 @@ final class AuthService: ObservableObject {
         }
 
         // 2. Update Firebase Auth profile first (source of truth for Auth)
-        print("📝 [AUTH] Starting profile update for user: \(uid)")
         if let photoURL = photoURL {
-            print("🖼️ [AUTH] Updating photoURL: \(photoURL.absoluteString)")
         }
         if let displayName = displayName {
-            print("👤 [AUTH] Updating displayName: \(displayName)")
         }
 
         let changeRequest = currentUser.createProfileChangeRequest()
@@ -779,7 +780,6 @@ final class AuthService: ObservableObject {
 
         if profileUpdated {
             try await changeRequest.commitChanges()
-            print("✅ [AUTH] Firebase Auth profile updated successfully")
         }
 
         // 3. Prepare update data for Firestore
@@ -793,12 +793,10 @@ final class AuthService: ObservableObject {
 
         // 4. Update Firestore user document
         try await firestore.collection("users").document(uid).updateData(updateData)
-        print("✅ [AUTH] Firestore user document updated")
 
         // Verify Firestore update
         let verifyDoc = try await firestore.collection("users").document(uid).getDocument()
         if let verifiedPhotoURL = verifyDoc.data()?["photoURL"] as? String {
-            print("✅ [AUTH] Firestore photoURL verified: \(verifiedPhotoURL)")
         }
 
         // 5. Update Realtime Database user profile
@@ -813,12 +811,10 @@ final class AuthService: ObservableObject {
 
         let userRef = database.child("users").child(uid)
         try await userRef.updateChildValues(rtdbUpdateData)
-        print("✅ [AUTH] Realtime Database user profile updated")
 
         // Verify RTDB update
         let rtdbSnapshot = try await userRef.getData()
         if let verifiedRTDBPhotoURL = rtdbSnapshot.childSnapshot(forPath: "profilePictureURL").value as? String {
-            print("✅ [AUTH] RTDB photoURL verified: \(verifiedRTDBPhotoURL)")
         }
 
         // 6. Update local SwiftData UserEntity
@@ -833,7 +829,6 @@ final class AuthService: ObservableObject {
                 photoURL: photoURL?.absoluteString
             )
             try modelContext.save()
-            print("✅ [AUTH] SwiftData UserEntity updated with photoURL: \(existingUser.photoURL ?? "nil")")
         }
 
         // 7. Update published currentUser
@@ -848,9 +843,7 @@ final class AuthService: ObservableObject {
                 isPublic: user.isPublic
             )
             self.currentUser = updatedUser
-            print("✅ [AUTH] Published currentUser updated with photoURL: \(updatedUser.photoURL ?? "nil")")
         }
 
-        print("🎉 [AUTH] Profile update complete! All storage layers synchronized.")
     }
 }

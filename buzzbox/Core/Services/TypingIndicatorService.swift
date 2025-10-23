@@ -60,14 +60,12 @@ final class TypingIndicatorService {
         // Set typing state with error handling
         typingRef.setValue(true) { error, _ in
             if let error = error {
-                print("⚠️ TypingIndicatorService: Failed to set typing status: \(error.localizedDescription)")
             }
         }
 
         // Auto-cleanup on disconnect (RTDB feature!)
         typingRef.onDisconnectRemoveValue { error, _ in
             if let error = error {
-                print("⚠️ TypingIndicatorService: Failed to set disconnect cleanup: \(error.localizedDescription)")
             }
         }
 
@@ -102,7 +100,6 @@ final class TypingIndicatorService {
         // Remove typing state with error handling
         typingRef.removeValue { error, _ in
             if let error = error {
-                print("⚠️ TypingIndicatorService: Failed to remove typing status: \(error.localizedDescription)")
             }
         }
     }

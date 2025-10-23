@@ -265,7 +265,6 @@ struct UserProfileDetailView: View {
             isPublic: false
         ),
         onMessageTapped: { userID in
-            print("Message tapped for user: \(userID)")
         }
     )
 }
@@ -289,7 +288,6 @@ struct UserProfileDetailView: View {
             isPublic: false
         ),
         onMessageTapped: { userID in
-            print("Message tapped for user: \(userID)")
         }
     )
 }
@@ -313,7 +311,6 @@ struct UserProfileDetailView: View {
             isPublic: true
         ),
         onMessageTapped: { userID in
-            print("Message tapped for user: \(userID)")
         }
     )
 }

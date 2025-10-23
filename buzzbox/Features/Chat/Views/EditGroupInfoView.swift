@@ -265,7 +265,6 @@ struct EditGroupInfoView: View {
                 let photoURL = try await uploadGroupPhoto(photo)
                 conversation.groupPhotoURL = photoURL
             } catch {
-                print("❌ Photo upload failed: \(error)")
                 uploadError = error
                 showRetryButton = true
                 return
@@ -291,7 +290,6 @@ struct EditGroupInfoView: View {
             dismiss()
 
         } catch {
-            print("❌ Error saving changes: \(error)")
             errorMessage = "Failed to save changes"
         }
     }
@@ -317,7 +315,6 @@ struct EditGroupInfoView: View {
             return false
 
         } catch {
-            print("⚠️ Error checking for conflicts: \(error)")
             // Allow save on error
             return false
         }
@@ -397,10 +394,8 @@ struct EditGroupInfoView: View {
                 conversationID: conversation.id
             )
 
-            print("✅ System message sent for name change")
 
         } catch {
-            print("❌ Error sending system message: \(error)")
         }
     }
 
@@ -417,8 +412,8 @@ struct EditGroupInfoView: View {
             return user.displayName
         }
 
-        // Fallback to RTDB
-        if let user = try await ConversationService.shared.getUser(userID: userID) {
+        // Fallback to cache/Firestore
+        if let user = try await ConversationService.shared.getUser(userID: userID, modelContext: modelContext) {
             return user.displayName
         }
 
