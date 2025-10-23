@@ -24,20 +24,31 @@ struct ProfileView: View {
     var body: some View {
         Group {
             if let viewModel = viewModel {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        profilePictureSection(viewModel: viewModel)
+                ZStack {
+                    // Gradient background
+                    LinearGradient(
+                        colors: [
+                            Color.blue.opacity(0.03),
+                            Color.blue.opacity(0.08),
+                            Color.blue.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    .ignoresSafeArea()
 
-                        Divider()
-                            .padding(.vertical)
+                    ScrollView {
+                        VStack(spacing: 24) {
+                            profilePictureSection(viewModel: viewModel)
 
-                        accountInfoSection(viewModel: viewModel)
+                            accountInfoSection(viewModel: viewModel)
 
-                        Spacer()
+                            Spacer()
 
-                        logoutButton
+                            logoutButton
+                        }
+                        .padding()
                     }
-                    .padding()
                 }
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
@@ -74,8 +85,28 @@ struct ProfileView: View {
     // MARK: - Profile Picture Section
 
     private func profilePictureSection(viewModel: ProfileViewModel) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             ZStack {
+                // Glass background circle
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 136, height: 136)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.blue.opacity(0.4),
+                                        Color.blue.opacity(0.2)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 3
+                            )
+                    )
+                    .shadow(color: Color.blue.opacity(0.15), radius: 12, x: 0, y: 6)
+
                 if let photoURL = viewModel.photoURL {
                     // Use Kingfisher for cached image loading
                     KFImage(photoURL)
@@ -96,20 +127,29 @@ struct ProfileView: View {
                         .scaledToFill()
                         .frame(width: 120, height: 120)
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.blue, lineWidth: 3))
                 } else {
                     // Default placeholder
                     Image(systemName: "person.circle.fill")
                         .resizable()
                         .frame(width: 120, height: 120)
-                        .foregroundColor(.gray)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Color.gray, Color.gray.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
                 }
 
                 // Upload progress overlay
                 if viewModel.isUploading {
                     Circle()
-                        .fill(Color.black.opacity(0.5))
+                        .fill(.ultraThinMaterial)
                         .frame(width: 120, height: 120)
+                        .overlay(
+                            Circle()
+                                .fill(Color.black.opacity(0.3))
+                        )
 
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
@@ -119,11 +159,24 @@ struct ProfileView: View {
             .accessibilityLabel("Profile picture")
             .accessibilityHint("Double tap to change")
 
-            // Change Photo Button
+            // Change Photo Button - Glass pill style
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                Label("Change Photo", systemImage: "photo")
-                    .font(.caption)
-                    .foregroundColor(.blue)
+                HStack(spacing: 6) {
+                    Image(systemName: "photo.fill")
+                        .font(.caption)
+                    Text("Change Photo")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+                .foregroundColor(.blue)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.blue.opacity(0.3), lineWidth: 1)
+                )
             }
             .onChange(of: selectedPhotoItem) { _, newItem in
                 Task {
@@ -134,23 +187,33 @@ struct ProfileView: View {
                 }
             }
         }
+        .padding(.top, 20)
     }
 
     // MARK: - Account Info Section
 
     private func accountInfoSection(viewModel: ProfileViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Account Information")
                 .font(.headline)
+                .fontWeight(.semibold)
                 .foregroundColor(.primary)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 16) {
                 // Username display
                 HStack {
-                    Text("Username:")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    Label {
+                        Text("Username")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    } icon: {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                    }
+
                     Spacer()
+
                     HStack(spacing: 4) {
                         Text(authViewModel.currentUser?.displayName ?? "")
                             .font(.subheadline)
@@ -168,13 +231,22 @@ struct ProfileView: View {
                 .accessibilityLabel("Username: \(authViewModel.currentUser?.displayName ?? "")")
 
                 Divider()
+                    .background(Color.white.opacity(0.2))
 
                 // Email display
                 HStack {
-                    Text("Email:")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    Label {
+                        Text("Email")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    } icon: {
+                        Image(systemName: "envelope.fill")
+                            .foregroundColor(.blue)
+                            .frame(width: 20)
+                    }
+
                     Spacer()
+
                     Text(authViewModel.currentUser?.email ?? "")
                         .font(.subheadline)
                         .foregroundColor(.primary)
@@ -185,9 +257,24 @@ struct ProfileView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Email: \(authViewModel.currentUser?.email ?? "")")
             }
-            .padding()
-            .background(Color(.systemGray6))
-            .cornerRadius(10)
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.3),
+                                Color.white.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
         }
         .padding(.horizontal)
     }
@@ -200,12 +287,37 @@ struct ProfileView: View {
                 await authViewModel.logout(modelContext: modelContext)
             }
         }) {
-            Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
-                .frame(maxWidth: .infinity)
-                .padding()
-                .background(Color.red.opacity(0.1))
-                .foregroundColor(.red)
-                .cornerRadius(10)
+            ZStack {
+                // Glass background
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial)
+
+                // Red gradient overlay
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.red.opacity(0.15),
+                                Color.red.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                // Button content
+                Label("Log Out", systemImage: "rectangle.portrait.and.arrow.right")
+                    .font(.body)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.red)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(Color.red.opacity(0.3), lineWidth: 1)
+            )
+            .shadow(color: Color.red.opacity(0.1), radius: 8, x: 0, y: 4)
         }
         .padding(.horizontal)
         .padding(.bottom, 20)

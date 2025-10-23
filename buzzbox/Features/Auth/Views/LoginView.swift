@@ -27,27 +27,63 @@ struct LoginView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Logo/Branding
-                    brandingSection
+            ZStack {
+                // Gradient background
+                LinearGradient(
+                    colors: [
+                        Color.blue.opacity(0.03),
+                        Color.blue.opacity(0.08),
+                        Color.blue.opacity(0.05)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
 
-                    // Form Fields
-                    formSection
+                ScrollView {
+                    VStack(spacing: 32) {
+                        // Logo/Branding
+                        brandingSection
 
-                    // Login Button
-                    loginButton
+                        // Main content card with glass effect
+                        VStack(spacing: 24) {
+                            // Form Fields
+                            formSection
 
-                    // Sign Up Link
-                    signUpLink
+                            // Login Button
+                            loginButton
 
-                    // Development Quick Login (remove in production)
-                    #if DEBUG
-                    devQuickLoginButtons
-                    #endif
+                            // Sign Up Link
+                            signUpLink
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 32)
+                        .background(.ultraThinMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 20))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [
+                                            Color.white.opacity(0.3),
+                                            Color.white.opacity(0.1)
+                                        ],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: Color.black.opacity(0.05), radius: 12, x: 0, y: 8)
+
+                        // Development Quick Login (remove in production)
+                        #if DEBUG
+                        devQuickLoginButtons
+                        #endif
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 40)
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 40)
             }
             .navigationBarHidden(true)
             .onAppear {
@@ -77,18 +113,48 @@ struct LoginView: View {
 
     private var brandingSection: some View {
         VStack(spacing: 16) {
-            Image(systemName: "envelope.circle.fill")
-                .resizable()
-                .frame(width: 100, height: 100)
-                .foregroundColor(.blue)
+            // App icon with glass effect
+            ZStack {
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.blue.opacity(0.1),
+                                Color.blue.opacity(0.05)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 120, height: 120)
 
-            Text("Welcome Back")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 64, height: 64)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [Color.blue, Color.blue.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
 
-            Text("Log in to your account")
+            Text("BuzzBox")
+                .font(.system(size: 34, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Color.primary, Color.primary.opacity(0.7)],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+
+            Text("Welcome back to the community")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
         }
         .padding(.top, 40)
     }
@@ -97,10 +163,13 @@ struct LoginView: View {
 
     private var formSection: some View {
         VStack(spacing: 16) {
-            // Email Field
-            VStack(alignment: .leading, spacing: 8) {
+            // Email Field with glass effect
+            HStack(spacing: 12) {
+                Image(systemName: "envelope.fill")
+                    .foregroundColor(.secondary)
+                    .frame(width: 20)
+
                 TextField("Email", text: $viewModel.email)
-                    .textFieldStyle(.roundedBorder)
                     .keyboardType(.emailAddress)
                     .textContentType(.username)
                     .autocapitalization(.none)
@@ -113,11 +182,27 @@ struct LoginView: View {
                         focusedField = .password
                     }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        focusedField == .email
+                            ? Color.blue.opacity(0.5)
+                            : Color.clear,
+                        lineWidth: 1.5
+                    )
+            )
 
-            // Password Field
-            VStack(alignment: .leading, spacing: 8) {
+            // Password Field with glass effect
+            HStack(spacing: 12) {
+                Image(systemName: "lock.fill")
+                    .foregroundColor(.secondary)
+                    .frame(width: 20)
+
                 SecureField("Password", text: $viewModel.password)
-                    .textFieldStyle(.roundedBorder)
                     .textContentType(.password)
                     .focused($focusedField, equals: .password)
                     .submitLabel(.go)
@@ -129,6 +214,19 @@ struct LoginView: View {
                         }
                     }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(.thinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        focusedField == .password
+                            ? Color.blue.opacity(0.5)
+                            : Color.clear,
+                        lineWidth: 1.5
+                    )
+            )
 
             // Forgot Password Link
             HStack {
@@ -136,9 +234,11 @@ struct LoginView: View {
                 Button("Forgot Password?") {
                     showForgotPassword = true
                 }
-                .font(.caption)
+                .font(.subheadline)
+                .fontWeight(.medium)
                 .foregroundColor(.blue)
             }
+            .padding(.top, 4)
         }
     }
 
@@ -150,25 +250,51 @@ struct LoginView: View {
                 await viewModel.login(modelContext: modelContext)
             }
         }) {
-            HStack(spacing: 8) {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .scaleEffect(0.9)
-                    Text("Logging in...")
-                        .fontWeight(.semibold)
-                } else {
-                    Text("Log In")
-                        .fontWeight(.semibold)
+            ZStack {
+                // Glass background
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(.ultraThinMaterial)
+
+                // Gradient overlay
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(
+                        LinearGradient(
+                            colors: isFormValid
+                                ? [Color.blue, Color.blue.opacity(0.8)]
+                                : [Color.gray.opacity(0.3), Color.gray.opacity(0.2)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                // Button content
+                HStack(spacing: 8) {
+                    if viewModel.isLoading {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(0.9)
+                        Text("Logging in...")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                    } else {
+                        Text("Log In")
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                    }
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(isFormValid ? Color.blue : Color.gray.opacity(0.5))
-            .foregroundColor(.white)
-            .cornerRadius(12)
+            .frame(height: 54)
+            .shadow(
+                color: isFormValid ? Color.blue.opacity(0.3) : Color.clear,
+                radius: 8,
+                x: 0,
+                y: 4
+            )
         }
         .disabled(viewModel.isLoading || !isFormValid)
+        .scaleEffect(viewModel.isLoading ? 0.98 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isLoading)
         .accessibilityIdentifier("loginButton")
         .accessibilityLabel(viewModel.isLoading ? "Logging in" : "Log in")
     }
@@ -206,7 +332,7 @@ struct LoginView: View {
                 .fontWeight(.bold)
                 .foregroundColor(.orange)
 
-            // Creator Auto-Login Button
+            // Creator Auto-Login Button with glass effect
             Button(action: {
                 // Auto-fill creator credentials and login
                 viewModel.email = "andrewsheim@gmail.com"
@@ -215,32 +341,43 @@ struct LoginView: View {
                     await viewModel.login(modelContext: modelContext)
                 }
             }) {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.badge.key.fill")
-                        .font(.title3)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Creator Login")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                        Text("andrewsheim@gmail.com")
-                            .font(.caption2)
-                            .opacity(0.8)
+                ZStack {
+                    // Glass background
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.thinMaterial)
+
+                    // Gradient overlay
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.orange.opacity(0.2), Color.red.opacity(0.15)],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.badge.key.fill")
+                            .font(.title3)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Creator Login")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("andrewsheim@gmail.com")
+                                .font(.caption2)
+                                .opacity(0.8)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    LinearGradient(
-                        colors: [Color.orange.opacity(0.15), Color.red.opacity(0.15)],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                )
+                .frame(height: 54)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(
+                            Color.orange.opacity(0.4),
+                            lineWidth: 1
+                        )
                 )
-                .cornerRadius(10)
             }
             .accessibilityIdentifier("devLoginButton")
             .accessibilityLabel("Developer login as creator")

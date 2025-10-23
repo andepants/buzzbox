@@ -18,12 +18,30 @@ struct ChannelCardView: View {
 
     var body: some View {
         HStack(spacing: 16) {
-            // Emoji Icon (left)
-            Text(channel.channelEmoji ?? "💬")
-                .font(.system(size: 36))
-                .frame(width: 48, height: 48)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(Circle())
+            // Emoji Icon with glass effect (left)
+            ZStack {
+                // Glass circle background
+                Circle()
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 56, height: 56)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.blue.opacity(0.3),
+                                        Color.blue.opacity(0.1)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 2
+                            )
+                    )
+
+                Text(channel.channelEmoji ?? "💬")
+                    .font(.system(size: 28))
+            }
 
             // Channel Info (center)
             VStack(alignment: .leading, spacing: 4) {
@@ -42,28 +60,53 @@ struct ChannelCardView: View {
 
             Spacer()
 
-            // Unread Badge (right)
+            // Unread Badge with glass effect (right)
             if channel.unreadCount > 0 {
-                Text("\(channel.unreadCount)")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.blue)
-                    .clipShape(Capsule())
+                ZStack {
+                    Capsule()
+                        .fill(.ultraThinMaterial)
+
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.blue, Color.blue.opacity(0.8)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+
+                    Text("\(channel.unreadCount)")
+                        .font(.caption2)
+                        .fontWeight(.bold)
+                        .foregroundStyle(.white)
+                }
+                .frame(minWidth: 24, minHeight: 24)
+                .padding(.horizontal, 4)
+                .shadow(color: Color.blue.opacity(0.3), radius: 4, x: 0, y: 2)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
-            Rectangle()
-                .frame(height: 0.5)
-                .foregroundStyle(Color(.separator).opacity(0.5)),
-            alignment: .bottom
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.2),
+                            Color.white.opacity(0.05)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
         )
+        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
     }
 }
 

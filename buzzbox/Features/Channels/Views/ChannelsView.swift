@@ -86,23 +86,38 @@ struct ChannelsView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // Network status banner
-                if !networkMonitor.isConnected {
-                    NetworkStatusBanner()
-                }
+        ZStack {
+            // Gradient background
+            LinearGradient(
+                colors: [
+                    Color.blue.opacity(0.03),
+                    Color.blue.opacity(0.08),
+                    Color.blue.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-                // Channels or empty state
-                if filteredChannels.isEmpty && searchText.isEmpty {
-                    emptyStateView
-                        .frame(maxWidth: .infinity, minHeight: 300)
-                } else if filteredChannels.isEmpty {
-                    emptySearchView
-                        .frame(maxWidth: .infinity, minHeight: 300)
-                } else {
-                    channelsList
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Network status banner
+                    if !networkMonitor.isConnected {
+                        NetworkStatusBanner()
+                    }
+
+                    // Channels or empty state
+                    if filteredChannels.isEmpty && searchText.isEmpty {
+                        emptyStateView
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                    } else if filteredChannels.isEmpty {
+                        emptySearchView
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                    } else {
+                        channelsList
+                    }
                 }
+                .padding(.top, 8)
             }
         }
         .searchable(text: $searchText, prompt: "Search channels")
@@ -165,7 +180,7 @@ struct ChannelsView: View {
     }
 
     private var channelsList: some View {
-        LazyVStack(spacing: 0) {
+        LazyVStack(spacing: 8) {
             ForEach(filteredChannels) { channel in
                 NavigationLink(value: channel) {
                     ChannelCardView(channel: channel)
@@ -205,6 +220,7 @@ struct ChannelsView: View {
                 }
             }
         }
+        .padding(.bottom, 16)
     }
 
     // MARK: - Helper Methods
