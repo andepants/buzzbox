@@ -1,11 +1,36 @@
 /// NotificationService.swift
 /// Handles in-app and push notifications with simulator support
 ///
-/// Features:
-/// - Local notifications for simulator testing
-/// - Foreground notification banners
-/// - In-app toast notifications when user is in different conversation
-/// - Works seamlessly on both simulator and device
+/// **Notification System Overview:**
+/// This app uses THREE notification systems that work together:
+///
+/// 1. **Custom In-App Banner** (`showInAppNotification`)
+///    - Custom SwiftUI overlay at top of screen
+///    - Works on: Simulator ✅ | Device ✅
+///    - When: App is in foreground
+///
+/// 2. **Local Notifications** (`scheduleLocalNotification`)
+///    - UNUserNotificationCenter native notifications
+///    - Works on: Simulator ✅ | Device ✅
+///    - When: App is in foreground or background
+///    - Note: Primary notification method for simulator testing
+///
+/// 3. **FCM Push Notifications** (Cloud Function)
+///    - Firebase Cloud Messaging via Cloud Functions
+///    - Works on: Simulator ❌ | Device ✅ (requires APNs)
+///    - When: App is in background or foreground
+///    - Note: Requires physical device with APNs support
+///
+/// **Notification Flow:**
+/// - User sends message → MessageThreadViewModel
+/// - Triggers: showInAppNotification() + scheduleLocalNotification() (local)
+/// - Triggers: Cloud Function sends FCM (remote, device only)
+/// - AppDelegate.willPresent handles foreground display with [.banner, .sound, .badge]
+///
+/// **Simulator Testing:**
+/// - Use local notifications (methods 1 & 2 above)
+/// - FCM will NOT work on simulator (APNs limitation)
+/// - All logging includes [SIMULATOR] prefix for clarity
 
 import Foundation
 import SwiftUI
@@ -53,59 +78,29 @@ class NotificationService {
     // MARK: - Initialization
 
     private init() {
-        setupNotificationObserver()
-    }
-
-    // MARK: - Setup
-
-    /// Listen for real-time messages to show in-app notifications
-    private func setupNotificationObserver() {
-        // This will be called from MessageService when new message arrives
-        NotificationCenter.default.addObserver(
-            forName: Notification.Name("NewMessageReceived"),
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let self = self else { return }
-
-            // Extract message data
-            if let userInfo = notification.userInfo,
-               let senderName = userInfo["senderName"] as? String,
-               let messageText = userInfo["messageText"] as? String,
-               let conversationID = userInfo["conversationID"] as? String,
-               let senderID = userInfo["senderID"] as? String {
-
-                // Only show if not from current user and not viewing this conversation
-                guard senderID != Auth.auth().currentUser?.uid else { return }
-                guard conversationID != self.currentConversationID else { return }
-
-                Task {
-                    await self.showInAppNotification(
-                        title: senderName,
-                        body: messageText,
-                        conversationID: conversationID
-                    )
-                }
-            }
-        }
+        // NotificationService is now called directly from MessageThreadViewModel
+        // No need for NotificationCenter observers
     }
 
     // MARK: - Public Methods
 
+    /// Shows an in-app notification banner (works on simulator) with retry logic
     /// Shows an in-app notification banner (works on simulator) with retry logic
     func showInAppNotification(
         title: String,
         body: String,
         conversationID: String
     ) async {
-        
-        // Check if user is viewing this conversation in UserPresenceService
-        let userCurrentScreen = UserPresenceService.shared.getCurrentConversationID()
-
-        // Don't show if user is already viewing this conversation
-        if conversationID == currentConversationID || conversationID == userCurrentScreen {
+        // ⚠️ CRITICAL: Only show notifications for authenticated users
+        guard Auth.auth().currentUser != nil else {
             return
         }
+
+        #if targetEnvironment(simulator)
+        print("🔔 [NOTIF] [SIMULATOR] Showing IN-APP BANNER")
+        #else
+        print("🔔 [NOTIF] [DEVICE] Showing IN-APP BANNER")
+        #endif
         
         // Attempt with retry logic
         for attempt in 1...maxRetryAttempts {
@@ -153,26 +148,36 @@ class NotificationService {
                 if attempt < maxRetryAttempts {
                     let delay = retryDelays[attempt - 1]
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                } else {
                 }
             }
         }
     }
 
     /// Schedule a local notification (works on simulator) with retry logic
+    ///
+    /// **Important for Simulator Testing:**
+    /// This is the PRIMARY notification method for iOS Simulator since FCM/APNs don't work on simulator.
+    /// On device, this complements FCM push notifications.
+    /// Schedule a local notification (works on simulator) with retry logic
+    ///
+    /// **Important for Simulator Testing:**
+    /// This is the PRIMARY notification method for iOS Simulator since FCM/APNs don't work on simulator.
+    /// On device, this complements FCM push notifications.
     func scheduleLocalNotification(
         title: String,
         body: String,
         conversationID: String
     ) async {
-
-        // Check if user is viewing this conversation in UserPresenceService
-        let userCurrentScreen = UserPresenceService.shared.getCurrentConversationID()
-
-        // Don't schedule if user is viewing this conversation
-        if conversationID == currentConversationID || conversationID == userCurrentScreen {
+        // ⚠️ CRITICAL: Only schedule notifications for authenticated users
+        guard Auth.auth().currentUser != nil else {
             return
         }
+
+        #if targetEnvironment(simulator)
+        print("🔔 [NOTIF] [SIMULATOR] Scheduling LOCAL NOTIFICATION (primary for simulator)")
+        #else
+        print("🔔 [NOTIF] [DEVICE] Scheduling LOCAL NOTIFICATION (complement to FCM)")
+        #endif
         
         // Check notification authorization status
         let settings = await UNUserNotificationCenter.current().notificationSettings()
@@ -199,8 +204,8 @@ class NotificationService {
                 content.badge = 1
                 content.userInfo = ["conversationID": conversationID]
 
-                // Schedule immediately
-                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+                // Schedule with minimal delay (10ms for nearly instant delivery)
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 0.01, repeats: false)
                 let request = UNNotificationRequest(
                     identifier: UUID().uuidString,
                     content: content,
@@ -235,7 +240,6 @@ class NotificationService {
                 if attempt < maxRetryAttempts {
                     let delay = retryDelays[attempt - 1]
                     try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-                } else {
                 }
             }
         }
@@ -258,7 +262,7 @@ class NotificationService {
     
     // MARK: - Private Helpers
     
-    /// Logs notification attempt for debugging
+    /// Logs notification attempt for debugging with enhanced context
     private func logNotificationAttempt(
         type: String,
         conversationID: String,
@@ -268,8 +272,34 @@ class NotificationService {
     ) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let currentUserID = Auth.auth().currentUser?.uid ?? "unknown"
-        
-        if let error = error {
+        let prefix = "🔔 [NOTIF]"
+
+        // Check if user is viewing this conversation
+        let isViewingConversation = conversationID == currentConversationID ||
+                                    conversationID == UserPresenceService.shared.getCurrentConversationID()
+
+        #if targetEnvironment(simulator)
+        let environment = "[SIMULATOR]"
+        let deliveryChannels = "in-app banner, local notification (FCM unavailable on simulator)"
+        #else
+        let environment = "[DEVICE]"
+        let deliveryChannels = "in-app banner, local notification, FCM push"
+        #endif
+
+        if success {
+            print("\(prefix) \(environment) ✅ SUCCESS | Type: \(type) | Attempt: \(attempt)/\(maxRetryAttempts)")
+            print("    └─ ConversationID: \(conversationID)")
+            print("    └─ UserID: \(currentUserID)")
+            print("    └─ ViewingConversation: \(isViewingConversation ? "yes (still showing)" : "no")")
+            print("    └─ DeliveryChannels: \(deliveryChannels)")
+            print("    └─ Timestamp: \(timestamp)")
+        } else if let error = error {
+            print("\(prefix) \(environment) ❌ FAILURE | Type: \(type) | Attempt: \(attempt)/\(maxRetryAttempts)")
+            print("    └─ ConversationID: \(conversationID)")
+            print("    └─ UserID: \(currentUserID)")
+            print("    └─ ViewingConversation: \(isViewingConversation ? "yes" : "no")")
+            print("    └─ Error: \(error.localizedDescription)")
+            print("    └─ Timestamp: \(timestamp)")
         }
     }
 }

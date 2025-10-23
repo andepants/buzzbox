@@ -1,13 +1,28 @@
 /// AppDelegate.swift
-/// Handles push notification setup and deep linking
+/// Handles push notification setup, FCM token management, and deep linking
 /// [Source: Story 2.0B - Cloud Functions FCM (foundation)]
 /// [Source: Story 3.7 - Group Message Notifications]
 ///
-/// This AppDelegate handles:
-/// - FCM token registration and updates
-/// - Notification permissions
+/// **Responsibilities:**
+/// - FCM token registration and updates (device only, not simulator)
+/// - Notification permission requests and status tracking
+/// - Foreground notification display with [.banner, .sound, .badge]
 /// - Deep linking when user taps notifications
-/// - Works for both 1:1 and group conversations
+/// - FCM analytics tracking via Messaging.messaging().appDidReceiveMessage()
+///
+/// **Simulator vs Device Behavior:**
+/// - **Simulator:** FCM tokens may be generated but APNs won't work for remote push
+///   - Local notifications (UNUserNotificationCenter) ARE the primary method
+///   - All logging prefixed with [SIMULATOR]
+/// - **Device:** Full FCM/APNs support for remote push notifications
+///   - Cloud Functions send FCM → APNs → Device
+///   - All logging prefixed with [DEVICE]
+///
+/// **Foreground Notification Handling:**
+/// The `willPresent` delegate method ensures notifications show even when app is in foreground.
+/// Returns [.banner, .sound, .badge] to display native iOS notification banner.
+///
+/// **Works for both 1:1 and group conversations**
 
 import UIKit
 import SwiftUI
@@ -34,22 +49,53 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     /// Configures Firebase Cloud Messaging and notification permissions
     private func configureNotifications(application: UIApplication) {
-        // Set notification delegates
+        // ✅ CRITICAL FIX: Set delegates HERE (after Firebase.configure())
+        // This prevents crashes from delegates firing before Firebase is ready
         UNUserNotificationCenter.current().delegate = self
         Messaging.messaging().delegate = self
+
+        print("🔔 [APP DELEGATE] Notification delegates set (after Firebase configuration)")
+
+        // Log current notification permission status
+        Task {
+            await logNotificationPermissionStatus()
+        }
 
         // Request notification permissions
         let authOptions: UNAuthorizationOptions = [.alert, .badge, .sound]
         UNUserNotificationCenter.current().requestAuthorization(
             options: authOptions
         ) { granted, error in
+            print("🔐 [NOTIF PERMISSIONS] Authorization requested")
             if granted {
+                print("    └─ ✅ Granted: User allowed notifications")
             } else if let error = error {
+                print("    └─ ❌ Denied: \(error.localizedDescription)")
+            } else {
+                print("    └─ ❌ Denied: User declined notifications")
             }
         }
 
         // Register for remote notifications
         application.registerForRemoteNotifications()
+    }
+
+    /// Logs current notification permission status for debugging
+    private func logNotificationPermissionStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+
+        #if targetEnvironment(simulator)
+        let environment = "[SIMULATOR]"
+        #else
+        let environment = "[DEVICE]"
+        #endif
+
+        print("🔐 [NOTIF PERMISSIONS] \(environment) Current Status:")
+        print("    └─ Authorization: \(settings.authorizationStatus.description)")
+        print("    └─ Alert: \(settings.alertSetting.description)")
+        print("    └─ Sound: \(settings.soundSetting.description)")
+        print("    └─ Badge: \(settings.badgeSetting.description)")
+        print("    └─ Banner: \(settings.notificationCenterSetting.description)")
     }
 
     // MARK: - FCM Token Handling
@@ -75,9 +121,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Called when FCM token is refreshed
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let fcmToken = fcmToken else {
+            print("⚠️ [FCM TOKEN] No token received (expected on simulator)")
             return
         }
 
+        #if targetEnvironment(simulator)
+        print("🔑 [FCM TOKEN] [SIMULATOR] Token received (will NOT work for push - use local notifications)")
+        #else
+        print("🔑 [FCM TOKEN] [DEVICE] Token received and ready for push notifications")
+        #endif
+        print("    └─ Token: \(fcmToken.prefix(20))...")
 
         // Store token in Firestore for Cloud Functions to use
         Task {
@@ -111,6 +164,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Saves FCM token to Firestore for current user
     private func saveFCMToken(_ token: String) async {
         guard let userID = Auth.auth().currentUser?.uid else {
+            print("⚠️ [FCM TOKEN] Cannot save: No authenticated user")
             return
         }
 
@@ -119,13 +173,17 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 .collection("users")
                 .document(userID)
                 .setData(["fcmToken": token], merge: true)
+            print("✅ [FCM TOKEN] Saved to Firestore for user: \(userID)")
         } catch {
+            print("❌ [FCM TOKEN] Failed to save: \(error.localizedDescription)")
         }
     }
 
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Called when notification is received while app is in foreground
+    /// CRITICAL: This method ensures notifications show even when app is active
+    /// This is THE KEY method for foreground notification delivery across all screens
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -133,9 +191,37 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) {
         let userInfo = notification.request.content.userInfo
         let conversationID = userInfo["conversationID"] as? String ?? "unknown"
+        let title = notification.request.content.title
+        let body = notification.request.content.body
+        let timestamp = ISO8601DateFormatter().string(from: Date())
 
+        #if targetEnvironment(simulator)
+        let environment = "[SIMULATOR]"
+        #else
+        let environment = "[DEVICE]"
+        #endif
 
-        // Show notification even when app is in foreground
+        print("📬 [FOREGROUND NOTIF] \(environment) Notification received while app is in FOREGROUND")
+        print("    └─ ConversationID: \(conversationID)")
+        print("    └─ Title: \(title)")
+        print("    └─ Body: \(body)")
+        print("    └─ Timestamp: \(timestamp)")
+        print("    └─ UserInfo keys: \(userInfo.keys.map { String(describing: $0) }.joined(separator: ", "))")
+
+        // Check if this is an FCM notification
+        if let messageID = userInfo["gcm.message_id"] as? String {
+            print("    └─ FCM MessageID: \(messageID)")
+            print("    └─ Source: Firebase Cloud Messaging (FCM)")
+
+            // Log FCM analytics (per Firebase best practices)
+            Messaging.messaging().appDidReceiveMessage(userInfo)
+        } else {
+            print("    └─ Source: Local Notification (UNUserNotificationCenter)")
+        }
+
+        // ALWAYS show notification in foreground with banner, sound, and badge
+        // This ensures consistent notification delivery regardless of app state or screen
+        print("    └─ ✅ Showing notification with [.banner, .sound, .badge]")
         completionHandler([.banner, .sound, .badge])
     }
 
@@ -161,5 +247,31 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         }
 
         completionHandler()
+    }
+}
+
+// MARK: - UNNotificationSettings Extensions for Logging
+
+extension UNAuthorizationStatus {
+    var description: String {
+        switch self {
+        case .notDetermined: return "Not Determined (user hasn't been asked yet)"
+        case .denied: return "Denied (user explicitly declined)"
+        case .authorized: return "Authorized (user allowed notifications)"
+        case .provisional: return "Provisional (silent notifications allowed)"
+        case .ephemeral: return "Ephemeral (temporary authorization)"
+        @unknown default: return "Unknown"
+        }
+    }
+}
+
+extension UNNotificationSetting {
+    var description: String {
+        switch self {
+        case .notSupported: return "Not Supported"
+        case .disabled: return "Disabled"
+        case .enabled: return "Enabled"
+        @unknown default: return "Unknown"
+        }
     }
 }

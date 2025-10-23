@@ -18,6 +18,7 @@ struct MainTabView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
 
     // Tab selection with persistence
     @AppStorage("selectedTab") private var selectedTab = 0
@@ -25,6 +26,9 @@ struct MainTabView: View {
     // Navigation state for deep linking
     @State private var dmNavigationPath = NavigationPath()
     @State private var channelsNavigationPath = NavigationPath()
+
+    // Service lifecycle tracking
+    @State private var servicesStarted = false
 
     // Query DM conversations for unread badge count
     @Query(
@@ -100,6 +104,91 @@ struct MainTabView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenConversation"))) { notification in
             handleDeepLink(notification: notification)
+        }
+        .onAppear {
+            startServices()
+        }
+        .onDisappear {
+            stopServices()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            handleScenePhaseChange(newPhase)
+        }
+    }
+
+    // MARK: - Service Lifecycle
+
+    /// Starts services when MainTabView appears (user is authenticated and in app)
+    private func startServices() {
+        // Prevent duplicate starts
+        guard !servicesStarted else {
+            print("ℹ️  [MAIN TAB] Services already started, skipping duplicate start")
+            return
+        }
+
+        print("🚀 [MAIN TAB] MainTabView appeared - starting services")
+
+        Task { @MainActor in
+            // No delay needed! MainTabView only appears AFTER:
+            // - Firebase configured
+            // - SwiftData initialized
+            // - Auth check completed
+            // Everything is ready at this point
+
+            // Start user presence service
+            // Note: Message listeners are now managed per-screen (InboxView, ChannelsView, MessageThreadView)
+            await UserPresenceService.shared.setOnline()
+
+            servicesStarted = true
+            print("✅ [MAIN TAB] Services started successfully")
+        }
+    }
+
+    /// Stops services when MainTabView disappears (user logged out)
+    private func stopServices() {
+        guard servicesStarted else {
+            print("ℹ️  [MAIN TAB] Services not started, skipping stop")
+            return
+        }
+
+        print("🛑 [MAIN TAB] MainTabView disappeared - stopping services")
+
+        // Stop user presence service
+        // Note: Message listeners are now managed per-screen (InboxView, ChannelsView, MessageThreadView)
+        Task { @MainActor in
+            await UserPresenceService.shared.setOffline()
+        }
+
+        servicesStarted = false
+        print("✅ [MAIN TAB] Services stopped successfully")
+    }
+
+    /// Handles app lifecycle transitions while in MainTabView
+    private func handleScenePhaseChange(_ phase: ScenePhase) {
+        switch phase {
+        case .active:
+            // App became active while user is in MainTabView
+            // Restart services if they stopped
+            if !servicesStarted {
+                print("🔄 [MAIN TAB] App became active - restarting services")
+                startServices()
+            }
+            // Note: Message listeners are now managed per-screen (InboxView, ChannelsView, MessageThreadView)
+            // They will automatically restart when those views reappear
+
+        case .background:
+            // App moved to background
+            // Keep services running for background notifications
+            // iOS will manage resources automatically
+            print("📱 [MAIN TAB] App backgrounded - keeping services active for notifications")
+
+        case .inactive:
+            // App becoming inactive (e.g., system dialog)
+            // No action needed
+            break
+
+        @unknown default:
+            break
         }
     }
 

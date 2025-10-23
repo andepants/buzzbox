@@ -46,12 +46,20 @@ final class AppContainer {
                 for: schema,
                 configurations: [modelConfiguration]
             )
+            print("✅ [APP CONTAINER] ModelContainer created successfully")
         } catch {
-            // If schema migration fails during development, try to delete and recreate
+            // If schema migration fails, try to delete and recreate
+            print("⚠️ [APP CONTAINER] ModelContainer creation failed, attempting recovery...")
+            print("    └─ Error: \(error.localizedDescription)")
 
             // Try to get the default store URL and delete it
             let url = modelConfiguration.url
-            try? FileManager.default.removeItem(at: url)
+            do {
+                try FileManager.default.removeItem(at: url)
+                print("    └─ Deleted corrupted database at: \(url.path)")
+            } catch {
+                print("    └─ Could not delete database: \(error.localizedDescription)")
+            }
 
             // Try again with fresh database
             do {
@@ -59,8 +67,29 @@ final class AppContainer {
                     for: schema,
                     configurations: [modelConfiguration]
                 )
+                print("    └─ ✅ ModelContainer recreated successfully")
             } catch {
-                fatalError("❌ Could not create ModelContainer even after cleanup: \(error)")
+                // ⚠️ CRITICAL FIX: Don't use fatalError - create an in-memory fallback
+                print("    └─ ❌ Failed to recreate ModelContainer, using in-memory fallback")
+                print("    └─ Error: \(error.localizedDescription)")
+
+                // Create in-memory container as last resort
+                let memoryConfig = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: true,
+                    allowsSave: false
+                )
+
+                do {
+                    self.modelContainer = try ModelContainer(
+                        for: schema,
+                        configurations: [memoryConfig]
+                    )
+                    print("    └─ ✅ In-memory ModelContainer created (data will not persist)")
+                } catch {
+                    // This should never happen with in-memory, but if it does, we have no choice
+                    fatalError("❌ FATAL: Could not create even in-memory ModelContainer: \(error)")
+                }
             }
         }
     }

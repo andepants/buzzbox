@@ -52,13 +52,6 @@ struct buzzboxApp: App {
                 RootView()
                     .environmentObject(authViewModel)
                     .environmentObject(networkMonitor)
-                    .onAppear {
-                        // ✅ Set user online when app launches
-                        // [Source: Story 2.8 - User Presence & Online Status]
-                        Task { @MainActor in
-                            await UserPresenceService.shared.setOnline()
-                        }
-                    }
 
                 // Privacy overlay when app backgrounds
                 if showPrivacyOverlay {
@@ -75,6 +68,7 @@ struct buzzboxApp: App {
     // MARK: - Lifecycle Handling
 
     /// Handles app lifecycle transitions
+    /// Note: Service lifecycle is now managed in MainTabView (authenticated area only)
     private func handleScenePhaseChange(_ phase: ScenePhase) {
         switch phase {
         case .active:

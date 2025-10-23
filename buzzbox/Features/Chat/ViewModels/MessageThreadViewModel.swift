@@ -53,24 +53,45 @@ final class MessageThreadViewModel {
 
     /// Sends a message with optimistic UI and RTDB sync
     func sendMessage(text: String) async {
-        
+
         guard let currentUserID = Auth.auth().currentUser?.uid else {
+            print("❌ [MESSAGE SEND] Failed: No authenticated user")
             return
         }
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+
+        print("📤 [MESSAGE SEND] Starting message send")
+        print("    └─ ConversationID: \(conversationID)")
+        print("    └─ SenderID: \(currentUserID)")
+        print("    └─ MessageLength: \(text.count) characters")
+        print("    └─ Timestamp: \(timestamp)")
 
         // Determine if this is a DM and who the recipient is
         let descriptor = FetchDescriptor<ConversationEntity>(
             predicate: #Predicate { $0.id == conversationID }
         )
-        
+
+        var recipientID: String?
+        var isGroupChat = false
+
         if let conversation = try? modelContext.fetch(descriptor).first {
-            
+            isGroupChat = conversation.isGroup
+
             if !conversation.isGroup {
                 // This is a DM - find the other participant
                 let participants = conversation.participantIDs
-                if let recipientID = participants.first(where: { $0 != currentUserID }) {
+                recipientID = participants.first(where: { $0 != currentUserID })
+
+                if let recipientID = recipientID {
+                    print("    └─ MessageType: Direct Message (DM)")
+                    print("    └─ RecipientID: \(recipientID)")
                 } else {
+                    print("    └─ ⚠️ Warning: Could not identify recipient")
                 }
+            } else {
+                print("    └─ MessageType: Group Chat")
+                print("    └─ Participants: \(conversation.participantIDs.count)")
             }
         }
 
@@ -95,8 +116,10 @@ final class MessageThreadViewModel {
 
         // Sync to RTDB in background
         Task { @MainActor in
+            let syncStartTime = Date()
+
             do {
-                
+
                 // Push to RTDB (generates server timestamp)
                 let messageData: [String: Any] = [
                     "senderID": message.senderID,
@@ -107,6 +130,14 @@ final class MessageThreadViewModel {
 
                 try await messagesRef.child(messageID).setValue(messageData)
 
+                let syncDuration = Date().timeIntervalSince(syncStartTime)
+
+                print("✅ [RTDB SYNC] Message synced successfully")
+                print("    └─ MessageID: \(messageID)")
+                print("    └─ ConversationID: \(conversationID)")
+                print("    └─ SyncDuration: \(String(format: "%.2f", syncDuration))s")
+                print("    └─ Status: delivered")
+
                 // Update local sync status and mark as delivered (RTDB confirmed)
                 message.syncStatus = .synced
                 message.status = .delivered
@@ -114,16 +145,29 @@ final class MessageThreadViewModel {
 
                 // Update conversation last message
                 await updateConversationLastMessage(text: text)
-                
+
+                // Log recipient notification status (for DMs only)
+                if let recipientID = recipientID, !isGroupChat {
+                    await logRecipientNotificationStatus(
+                        recipientID: recipientID,
+                        messageID: messageID,
+                        conversationID: conversationID
+                    )
+                }
 
             } catch {
-                
+
+                print("❌ [RTDB SYNC] Message sync failed")
+                print("    └─ MessageID: \(messageID)")
+                print("    └─ ConversationID: \(conversationID)")
+                print("    └─ Error: \(error.localizedDescription)")
+
                 // Mark as failed
                 message.syncStatus = .failed
                 message.syncError = error.localizedDescription
                 self.error = error
                 try? modelContext.save()
-                
+
             }
         }
     }
@@ -167,15 +211,9 @@ final class MessageThreadViewModel {
             }
         })
 
-        // Wait a short time for initial batch to complete
-        // Firebase fires .childAdded for all existing children rapidly, then continues with real-time updates
-        // After 2 seconds of no activity, we assume initial load is complete
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-            if self.isInitialLoad {
-                self.isInitialLoad = false
-            }
-        }
+        // Note: We use timestamp comparison (messageTimestamp > listenerStartTime) to determine
+        // if a message is new vs historical, so no delay is needed here.
+        // Historical messages are automatically filtered in handleIncomingMessage().
     }
 
     /// Stops real-time listener and cleans up
@@ -238,6 +276,109 @@ final class MessageThreadViewModel {
 
     // MARK: - Private Methods
 
+    /// Logs comprehensive notification status for recipient (sender-side perspective)
+    /// This shows the sender what notification delivery to expect for the recipient
+    private func logRecipientNotificationStatus(
+        recipientID: String,
+        messageID: String,
+        conversationID: String
+    ) async {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+
+        print("📬 [RECIPIENT NOTIF] Notification will be sent to recipient")
+        print("    └─ RecipientID: \(recipientID)")
+        print("    └─ MessageID: \(messageID)")
+        print("    └─ ConversationID: \(conversationID)")
+
+        // Fetch recipient name from Firestore
+        let recipientName = await fetchSenderName(senderID: recipientID)
+        print("    └─ RecipientName: \(recipientName)")
+
+        // Check recipient's online status from RTDB presence
+        let recipientStatus = await checkRecipientPresence(recipientID: recipientID)
+        print("    └─ RecipientStatus: \(recipientStatus.isOnline ? "online" : "offline")")
+
+        if let lastSeen = recipientStatus.lastSeen {
+            let timeAgo = Date().timeIntervalSince(lastSeen)
+            let lastSeenString: String
+            if timeAgo < 60 {
+                lastSeenString = "just now"
+            } else if timeAgo < 3600 {
+                lastSeenString = "\(Int(timeAgo / 60))m ago"
+            } else if timeAgo < 86400 {
+                lastSeenString = "\(Int(timeAgo / 3600))h ago"
+            } else {
+                lastSeenString = "\(Int(timeAgo / 86400))d ago"
+            }
+            print("    └─ LastSeen: \(lastSeenString)")
+        }
+
+        // Check if recipient is viewing this conversation
+        let recipientCurrentScreen = await checkRecipientCurrentScreen(recipientID: recipientID)
+        let isViewingConversation = recipientCurrentScreen == conversationID
+
+        if isViewingConversation {
+            print("    └─ RecipientScreen: viewing THIS conversation")
+        } else if let screen = recipientCurrentScreen {
+            print("    └─ RecipientScreen: viewing different conversation (\(screen))")
+        } else {
+            print("    └─ RecipientScreen: not in any conversation")
+        }
+
+        // Determine notification methods
+        #if targetEnvironment(simulator)
+        let notificationMethods = "in-app banner, local notification (FCM unavailable on simulator)"
+        #else
+        let notificationMethods = "in-app banner, local notification, FCM push"
+        #endif
+        print("    └─ NotificationMethods: \(notificationMethods)")
+
+        // Determine expected delivery timing
+        let expectedDelivery: String
+        if recipientStatus.isOnline {
+            if isViewingConversation {
+                expectedDelivery = "immediate (user viewing conversation)"
+            } else {
+                expectedDelivery = "immediate (user online)"
+            }
+        } else {
+            expectedDelivery = "on app open / device unlock"
+        }
+        print("    └─ ExpectedDelivery: \(expectedDelivery)")
+        print("    └─ Timestamp: \(timestamp)")
+    }
+
+    /// Checks recipient's presence status in RTDB
+    private func checkRecipientPresence(recipientID: String) async -> (isOnline: Bool, lastSeen: Date?) {
+        do {
+            let presenceRef = Database.database().reference().child("userPresence/\(recipientID)")
+            let snapshot = try await presenceRef.getData()
+
+            let isOnline = snapshot.childSnapshot(forPath: "online").value as? Bool ?? false
+            let lastSeenTimestamp = snapshot.childSnapshot(forPath: "lastSeen").value as? TimeInterval ?? 0
+
+            let lastSeen: Date? = lastSeenTimestamp > 0 ? Date(timeIntervalSince1970: lastSeenTimestamp / 1000) : nil
+
+            return (isOnline, lastSeen)
+        } catch {
+            // Silent failure - presence check is non-critical
+            return (false, nil)
+        }
+    }
+
+    /// Checks what screen/conversation recipient is currently viewing
+    private func checkRecipientCurrentScreen(recipientID: String) async -> String? {
+        do {
+            let presenceRef = Database.database().reference().child("userPresence/\(recipientID)")
+            let snapshot = try await presenceRef.getData()
+
+            return snapshot.childSnapshot(forPath: "currentConversationID").value as? String
+        } catch {
+            // Silent failure - screen check is non-critical
+            return nil
+        }
+    }
+
     private func handleIncomingMessage(_ snapshot: DataSnapshot) async {
 
         // Track initial load progress
@@ -293,21 +434,70 @@ final class MessageThreadViewModel {
             modelContext.insert(message)
             try? modelContext.save()
 
-            // Determine if we should trigger notification
-            let shouldTriggerNotification = !isFromCurrentUser && !isInitialLoad
+            // Determine if message is historical using timestamp comparison
+            // Historical = message was sent BEFORE listener started
+            // New = message was sent AFTER listener started
+            let isHistoricalMessage: Bool
+            if let messageTimestamp = messageTimestamp, let listenerStartTime = listenerStartTime {
+                // Message is historical if it was sent BEFORE listener started
+                isHistoricalMessage = messageTimestamp <= listenerStartTime
+            } else {
+                // If no timestamp available, assume historical (safer default to avoid spam)
+                isHistoricalMessage = true
+            }
 
+            // Log message receipt for debugging
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+            let logPrefix = isFromCurrentUser ? "📤 [MESSAGE] [OUTGOING]" : "📥 [MESSAGE] [INCOMING]"
 
-            if shouldTriggerNotification {
+            print("\(logPrefix) Message received in thread view")
+            print("    └─ MessageID: \(messageID)")
+            print("    └─ SenderID: \(senderID)")
+            print("    └─ ConversationID: \(conversationID)")
 
-                // Trigger in-app notification for new message
+            // Log timestamp comparison details
+            if let messageTimestamp = messageTimestamp {
+                print("    └─ MessageTimestamp: \(ISO8601DateFormatter().string(from: messageTimestamp))")
+            } else {
+                print("    └─ MessageTimestamp: nil")
+            }
+
+            if let listenerStartTime = listenerStartTime {
+                print("    └─ ListenerStartTime: \(ISO8601DateFormatter().string(from: listenerStartTime))")
+            } else {
+                print("    └─ ListenerStartTime: nil")
+            }
+
+            print("    └─ IsHistoricalMessage: \(isHistoricalMessage)")
+            print("    └─ IsFromCurrentUser: \(isFromCurrentUser)")
+
+            // If this is someone else's message and not historical, trigger notification
+            if !isFromCurrentUser && !isHistoricalMessage {
+                print("    └─ 🔔 Triggering notification...")
+                
+                // Mark as delivered in RTDB
+                Task { @MainActor in
+                    try? await messagesRef.child(messageID).updateChildValues([
+                        "status": "delivered"
+                    ])
+                }
+                
+                // Trigger notification
                 await triggerNotificationForMessage(
                     messageID: messageID,
                     senderID: senderID,
-                    text: messageText
+                    text: messageText,
+                    conversationID: conversationID
                 )
-            } else if isFromCurrentUser {
-            } else if isInitialLoad {
+            } else {
+                if isFromCurrentUser {
+                    print("    └─ ⏭️  Skipped: Message from current user (no self-notification)")
+                } else if isHistoricalMessage {
+                    print("    └─ ⏭️  Skipped: Historical message (listener backfill)")
+                }
             }
+
+            print("    └─ Timestamp: \(timestamp)")
         } else {
 
             if let existingMessage = existing {
@@ -329,7 +519,6 @@ final class MessageThreadViewModel {
 
         let messageID = snapshot.key
 
-
         // Find existing message
         let descriptor = FetchDescriptor<MessageEntity>(
             predicate: #Predicate { $0.id == messageID }
@@ -339,10 +528,22 @@ final class MessageThreadViewModel {
             return
         }
 
-
         // Update status (delivered → read)
         if let statusString = messageData["status"] as? String,
            let status = MessageStatus(rawValue: statusString) {
+
+            // Log status change with detailed info
+            let oldStatus = existing.status
+            let timestamp = ISO8601DateFormatter().string(from: Date())
+
+            print("📨 [MESSAGE STATUS] Status updated")
+            print("    └─ MessageID: \(messageID)")
+            print("    └─ ConversationID: \(conversationID)")
+            print("    └─ OldStatus: \(oldStatus.rawValue)")
+            print("    └─ NewStatus: \(status.rawValue)")
+            print("    └─ StatusChange: \(oldStatus.rawValue) → \(status.rawValue)")
+            print("    └─ Timestamp: \(timestamp)")
+
             existing.status = status
             try? modelContext.save()
         }
@@ -357,54 +558,40 @@ final class MessageThreadViewModel {
         ])
     }
 
-    /// Triggers in-app notification when new message arrives from another user
-    /// Triggers in-app notification when new message arrives from another user
+    /// Triggers notification for a new message
     private func triggerNotificationForMessage(
         messageID: String,
         senderID: String,
-        text: String
+        text: String,
+        conversationID: String
     ) async {
-        
-        // Get current user info
-        guard let currentUserID = Auth.auth().currentUser?.uid else {
-            return
-        }
-        
-        // Determine user roles
-        let isCurrentUserCreator = currentUserID == "andrewsheim@gmail.com" // Your creator email
-        let isSenderCreator = senderID == "andrewsheim@gmail.com"
-
         // Fetch sender's name from Firestore
         let senderName = await fetchSenderName(senderID: senderID)
+
+        print("🔔 [MESSAGE THREAD] Triggering notifications")
+        print("    └─ Sender: \(senderName)")
+        print("    └─ MessageID: \(messageID)")
+        print("    └─ ConversationID: \(conversationID)")
 
         // ═══════════════════════════════════════════════════════════
         // TRIGGER IN-APP NOTIFICATION (Foreground banner)
         // ═══════════════════════════════════════════════════════════
-        
-        do {
-            await NotificationService.shared.showInAppNotification(
-                title: senderName,
-                body: text,
-                conversationID: conversationID
-            )
-        } catch {
-        }
+        await NotificationService.shared.showInAppNotification(
+            title: senderName,
+            body: text,
+            conversationID: conversationID
+        )
 
         // ═══════════════════════════════════════════════════════════
         // TRIGGER LOCAL NOTIFICATION (Background/Foreground)
         // ═══════════════════════════════════════════════════════════
-        
-        do {
-            await NotificationService.shared.scheduleLocalNotification(
-                title: senderName,
-                body: text,
-                conversationID: conversationID
-            )
-        } catch {
-        }
+        await NotificationService.shared.scheduleLocalNotification(
+            title: senderName,
+            body: text,
+            conversationID: conversationID
+        )
 
-        
-        // Note: FCM push notification will be sent by Cloud Function
+        print("✅ [MESSAGE THREAD] Notifications triggered successfully")
     }
 
     /// Fetches sender display name from Firestore

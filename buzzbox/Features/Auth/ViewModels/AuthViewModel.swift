@@ -162,6 +162,10 @@ final class AuthViewModel: ObservableObject {
             currentUser = user
             isAuthenticated = true
 
+            // Note: UserPresenceService is started in MainTabView when it appears
+            // Message listeners are managed per-screen (InboxView, ChannelsView, MessageThreadView)
+            // This ensures services start at the right time after full initialization
+
             // Success - navigation handled by parent view observing isAuthenticated
         } catch let error as AuthError {
             errorMessage = error.errorDescription
@@ -321,6 +325,10 @@ final class AuthViewModel: ObservableObject {
             // Update local state
             currentUser = user
             isAuthenticated = true
+
+            // Note: UserPresenceService is started in MainTabView when it appears
+            // Message listeners are managed per-screen (InboxView, ChannelsView, MessageThreadView)
+            // This ensures services start at the right time after full initialization
 
             // Success - navigation handled by parent view observing isAuthenticated
         } catch let error as AuthError {

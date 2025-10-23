@@ -10,6 +10,8 @@
 import SwiftUI
 import SwiftData
 import FirebaseAuth
+import FirebaseDatabase
+import FirebaseFirestore
 
 /// Main view displaying all channels (groups) with real-time updates
 struct ChannelsView: View {
@@ -33,6 +35,14 @@ struct ChannelsView: View {
     @State private var searchText = ""
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @EnvironmentObject var authViewModel: AuthViewModel
+
+    // MARK: - Message Listener Properties
+
+    /// Active message listeners for all channel conversations (conversationID -> DatabaseHandle)
+    @State private var messageListeners: [String: DatabaseHandle] = [:]
+
+    /// Listener start time for historical message filtering
+    @State private var listenerStartTime: Date?
 
     // MARK: - Initialization
 
@@ -118,10 +128,12 @@ struct ChannelsView: View {
         .task {
             setupViewModel()
             await viewModel?.startRealtimeListener()
+            await startMessageListeners()
         }
         .onDisappear {
             viewModel?.stopRealtimeListener()
             viewModel = nil  // Explicitly release ViewModel
+            stopMessageListeners()
         }
         .alert("Error", isPresented: .constant(viewModel?.error != nil)) {
             Button("OK") {
@@ -224,6 +236,189 @@ struct ChannelsView: View {
         channel.unreadCount = channel.unreadCount > 0 ? 0 : 1
         try? modelContext.save()
 
+    }
+
+    // MARK: - Message Listener Methods
+
+    /// Starts listening to messages for all channel conversations
+    private func startMessageListeners() async {
+        guard let currentUserID = Auth.auth().currentUser?.uid else {
+            print("⚠️ [CHANNELS] Cannot start message listeners: No authenticated user")
+            return
+        }
+
+        listenerStartTime = Date()
+        print("🔔 [CHANNELS] Starting message listeners for \(channels.count) channel conversations")
+        print("    └─ ListenerStartTime: \(ISO8601DateFormatter().string(from: listenerStartTime!))")
+
+        // Set up listeners for each channel conversation
+        for channel in channels {
+            setupMessageListener(conversationID: channel.id, currentUserID: currentUserID)
+        }
+
+        print("✅ [CHANNELS] All \(channels.count) message listeners active")
+    }
+
+    /// Stops all active message listeners
+    private func stopMessageListeners() {
+        guard !messageListeners.isEmpty else {
+            return
+        }
+
+        print("🔔 [CHANNELS] Stopping message listeners")
+        print("    └─ Active listeners: \(messageListeners.count)")
+
+        let database = Database.database().reference()
+
+        for (conversationID, handle) in messageListeners {
+            database.child("messages/\(conversationID)").removeObserver(withHandle: handle)
+            print("    └─ Stopped listener for: \(conversationID)")
+        }
+
+        messageListeners.removeAll()
+        listenerStartTime = nil
+
+        print("✅ [CHANNELS] All message listeners stopped")
+    }
+
+    /// Sets up a message listener for a specific conversation
+    private func setupMessageListener(conversationID: String, currentUserID: String) {
+        // Skip if already listening
+        if messageListeners[conversationID] != nil {
+            return
+        }
+
+        let database = Database.database().reference()
+        let messagesRef = database.child("messages/\(conversationID)")
+
+        // Listen to the LAST message only (most efficient)
+        let query = messagesRef.queryLimited(toLast: 1)
+
+        let handle = query.observe(.childAdded, with: { snapshot in
+            Task { @MainActor in
+                await self.handleIncomingMessage(
+                    snapshot: snapshot,
+                    conversationID: conversationID,
+                    currentUserID: currentUserID
+                )
+            }
+        }, withCancel: { error in
+            print("❌ [CHANNELS] Listener error for \(conversationID): \(error.localizedDescription)")
+        })
+
+        messageListeners[conversationID] = handle
+    }
+
+    /// Handles an incoming message from RTDB
+    private func handleIncomingMessage(
+        snapshot: DataSnapshot,
+        conversationID: String,
+        currentUserID: String
+    ) async {
+        guard let messageData = snapshot.value as? [String: Any] else {
+            return
+        }
+
+        let messageID = snapshot.key
+        let senderID = messageData["senderID"] as? String ?? ""
+        let messageText = messageData["text"] as? String ?? ""
+
+        // Get message timestamp
+        let serverTimestampMs = messageData["serverTimestamp"] as? Double ?? 0
+        let messageTimestamp = serverTimestampMs > 0 ? Date(timeIntervalSince1970: serverTimestampMs / 1000.0) : nil
+
+        // Determine if message is historical
+        let isHistoricalMessage: Bool
+        if let messageTimestamp = messageTimestamp, let listenerStartTime = listenerStartTime {
+            isHistoricalMessage = messageTimestamp <= listenerStartTime
+        } else {
+            isHistoricalMessage = true
+        }
+
+        // Check if message is from current user
+        let isFromCurrentUser = senderID == currentUserID
+
+        // Check if user is viewing this conversation
+        let currentScreen = UserPresenceService.shared.getCurrentConversationID()
+        let isViewingConversation = currentScreen == conversationID
+
+        // Determine if we should trigger notification
+        let shouldTriggerNotification = !isFromCurrentUser && !isHistoricalMessage && !isViewingConversation
+
+        // Log notification decision
+        print("📥 [CHANNELS] Message detected in channel conversation")
+        print("    └─ ConversationID: \(conversationID)")
+        print("    └─ MessageID: \(messageID)")
+        print("    └─ SenderID: \(senderID)")
+        print("    └─ IsHistorical: \(isHistoricalMessage)")
+        print("    └─ IsFromCurrentUser: \(isFromCurrentUser)")
+        print("    └─ IsViewingConversation: \(isViewingConversation)")
+        print("    └─ WillTriggerNotification: \(shouldTriggerNotification)")
+
+        // Skip notification if conditions not met
+        guard shouldTriggerNotification else {
+            if isFromCurrentUser {
+                print("    └─ ⏭️  Skipped: Message from current user")
+            } else if isHistoricalMessage {
+                print("    └─ ⏭️  Skipped: Historical message")
+            } else if isViewingConversation {
+                print("    └─ ⏭️  Skipped: User viewing this conversation")
+            }
+            return
+        }
+
+        // Trigger notification
+        print("    └─ 🔔 Triggering notification...")
+        await triggerNotificationForMessage(
+            messageID: messageID,
+            senderID: senderID,
+            text: messageText,
+            conversationID: conversationID
+        )
+    }
+
+    /// Triggers notification for a new message
+    private func triggerNotificationForMessage(
+        messageID: String,
+        senderID: String,
+        text: String,
+        conversationID: String
+    ) async {
+        // Fetch sender's name
+        let senderName = await fetchSenderName(senderID: senderID)
+
+        print("🔔 [CHANNELS] Triggering notifications")
+        print("    └─ Sender: \(senderName)")
+        print("    └─ MessageID: \(messageID)")
+        print("    └─ ConversationID: \(conversationID)")
+
+        // Trigger in-app notification
+        await NotificationService.shared.showInAppNotification(
+            title: senderName,
+            body: text,
+            conversationID: conversationID
+        )
+
+        // Trigger local notification
+        await NotificationService.shared.scheduleLocalNotification(
+            title: senderName,
+            body: text,
+            conversationID: conversationID
+        )
+
+        print("✅ [CHANNELS] Notifications triggered successfully")
+    }
+
+    /// Fetches sender display name from Firestore
+    private func fetchSenderName(senderID: String) async -> String {
+        do {
+            let db = Firestore.firestore()
+            let doc = try await db.collection("users").document(senderID).getDocument()
+            return doc.data()?["displayName"] as? String ?? "Unknown User"
+        } catch {
+            print("⚠️ [CHANNELS] Failed to fetch sender name: \(error.localizedDescription)")
+            return "Unknown User"
+        }
     }
 }
 
