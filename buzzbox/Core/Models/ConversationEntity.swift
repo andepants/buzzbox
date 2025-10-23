@@ -36,6 +36,14 @@ final class ConversationEntity {
     /// Is this a creator-only channel (only creator can post)?
     var isCreatorOnly: Bool
 
+    // MARK: - Channel Metadata
+
+    /// Channel emoji icon (for visual identity in card view)
+    var channelEmoji: String?
+
+    /// Channel description (short description of channel purpose)
+    var channelDescription: String?
+
     /// Creation timestamp
     var createdAt: Date
 
@@ -91,6 +99,8 @@ final class ConversationEntity {
         adminUserIDs: [String] = [],
         isGroup: Bool = false,
         isCreatorOnly: Bool = false,
+        channelEmoji: String? = nil,
+        channelDescription: String? = nil,
         createdAt: Date = Date(),
         syncStatus: SyncStatus = .pending
     ) {
@@ -101,6 +111,8 @@ final class ConversationEntity {
         self.adminUserIDs = adminUserIDs
         self.isGroup = isGroup
         self.isCreatorOnly = isCreatorOnly
+        self.channelEmoji = channelEmoji
+        self.channelDescription = channelDescription
         self.createdAt = createdAt
         self.updatedAt = createdAt
         self.isPinned = false
@@ -151,10 +163,20 @@ final class ConversationEntity {
     /// - Parameter isCreator: Whether the current user is the creator
     /// - Returns: True if user can post, false otherwise
     func canUserPost(isCreator: Bool) -> Bool {
+        print("  🔑 [PERMISSION] canUserPost() called:")
+        print("    - Channel: \(displayName ?? id)")
+        print("    - isCreatorOnly: \(isCreatorOnly)")
+        print("    - User isCreator: \(isCreator)")
+
         // If not a creator-only channel, everyone can post
-        guard isCreatorOnly else { return true }
+        guard isCreatorOnly else {
+            print("    - Result: TRUE (public channel)")
+            return true
+        }
 
         // Only creator can post to creator-only channels
-        return isCreator
+        let result = isCreator
+        print("    - Result: \(result ? "TRUE" : "FALSE") (creator-only, user is \(isCreator ? "creator" : "fan"))")
+        return result
     }
 }

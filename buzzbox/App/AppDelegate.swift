@@ -91,6 +91,26 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         }
     }
 
+    /// Manually request FCM token (for existing users without tokens)
+    func refreshFCMToken() {
+        // Skip FCM token on simulator (APNS not available)
+        #if targetEnvironment(simulator)
+        print("⚠️ Skipping FCM token fetch on simulator (APNS not available)")
+        return
+        #else
+        Messaging.messaging().token { token, error in
+            if let error = error {
+                print("❌ Error fetching FCM token: \(error.localizedDescription)")
+            } else if let token = token {
+                print("✅ FCM token refreshed: \(token)")
+                Task {
+                    await self.saveFCMToken(token)
+                }
+            }
+        }
+        #endif
+    }
+
     /// Saves FCM token to Firestore for current user
     private func saveFCMToken(_ token: String) async {
         guard let userID = Auth.auth().currentUser?.uid else {
@@ -102,7 +122,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             try await Firestore.firestore()
                 .collection("users")
                 .document(userID)
-                .updateData(["fcmToken": token])
+                .setData(["fcmToken": token], merge: true)
             print("✅ FCM token saved to Firestore for user: \(userID)")
         } catch {
             print("❌ Failed to save FCM token: \(error.localizedDescription)")

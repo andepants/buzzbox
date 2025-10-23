@@ -76,23 +76,30 @@ struct ChannelsView: View {
     // MARK: - Body
 
     var body: some View {
-        List {
-            // Network status banner
-            if !networkMonitor.isConnected {
-                NetworkStatusBanner()
-            }
+        ScrollView {
+            VStack(spacing: 16) {
+                // Network status banner
+                if !networkMonitor.isConnected {
+                    NetworkStatusBanner()
+                }
 
-            // Channels or empty state
-            if filteredChannels.isEmpty && searchText.isEmpty {
-                emptyStateView
-            } else if filteredChannels.isEmpty {
-                emptySearchView
-            } else {
-                channelsList
+                // Channels or empty state
+                if filteredChannels.isEmpty && searchText.isEmpty {
+                    emptyStateView
+                        .frame(maxWidth: .infinity, minHeight: 300)
+                } else if filteredChannels.isEmpty {
+                    emptySearchView
+                        .frame(maxWidth: .infinity, minHeight: 300)
+                } else {
+                    channelsList
+                }
             }
         }
         .searchable(text: $searchText, prompt: "Search channels")
         .navigationTitle("Channels")
+        .navigationDestination(for: ConversationEntity.self) { channel in
+            MessageThreadView(conversation: channel)
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
@@ -135,7 +142,6 @@ struct ChannelsView: View {
             systemImage: "bubble.left.and.bubble.right",
             description: Text("Channels will appear here when created by admins")
         )
-        .listRowSeparator(.hidden)
     }
 
     private var emptySearchView: some View {
@@ -144,56 +150,52 @@ struct ChannelsView: View {
             systemImage: "magnifyingglass",
             description: Text("No channels match '\(searchText)'")
         )
-        .listRowSeparator(.hidden)
     }
 
     private var channelsList: some View {
-        ForEach(filteredChannels) { channel in
-            NavigationLink(value: channel) {
-                ConversationRowView(conversation: channel)
-            }
-            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                Button {
-                    toggleMute(channel)
-                } label: {
-                    Label(
-                        channel.isMuted ? "Unmute" : "Mute",
-                        systemImage: channel.isMuted ? "bell" : "bell.slash"
-                    )
+        LazyVStack(spacing: 0) {
+            ForEach(filteredChannels) { channel in
+                NavigationLink(value: channel) {
+                    ChannelCardView(channel: channel)
                 }
-                .tint(.orange)
-            }
-            .contextMenu {
-                Button {
-                    togglePin(channel)
-                } label: {
-                    Label(
-                        channel.isPinned ? "Unpin" : "Pin",
-                        systemImage: channel.isPinned ? "pin.slash" : "pin"
-                    )
-                }
+                .buttonStyle(PlainButtonStyle())
+                .simultaneousGesture(
+                    TapGesture().onEnded { _ in
+                        print("🔔 [NAV] Channel tapped: \(channel.displayName ?? channel.id)")
+                        print("📍 [NAV] Channel ID: \(channel.id)")
+                        print("👥 [NAV] Participants: \(channel.participantIDs.count)")
+                        print("🔗 [NAV] Navigating to MessageThreadView...")
+                    }
+                )
+                .contextMenu {
+                    Button {
+                        togglePin(channel)
+                    } label: {
+                        Label(
+                            channel.isPinned ? "Unpin" : "Pin",
+                            systemImage: channel.isPinned ? "pin.slash" : "pin"
+                        )
+                    }
 
-                Button {
-                    toggleMute(channel)
-                } label: {
-                    Label(
-                        channel.isMuted ? "Unmute" : "Mute",
-                        systemImage: channel.isMuted ? "bell" : "bell.slash"
-                    )
-                }
+                    Button {
+                        toggleMute(channel)
+                    } label: {
+                        Label(
+                            channel.isMuted ? "Unmute" : "Mute",
+                            systemImage: channel.isMuted ? "bell" : "bell.slash"
+                        )
+                    }
 
-                Button {
-                    toggleUnread(channel)
-                } label: {
-                    Label(
-                        channel.unreadCount > 0 ? "Mark as Read" : "Mark as Unread",
-                        systemImage: "envelope.badge"
-                    )
+                    Button {
+                        toggleUnread(channel)
+                    } label: {
+                        Label(
+                            channel.unreadCount > 0 ? "Mark as Read" : "Mark as Unread",
+                            systemImage: "envelope.badge"
+                        )
+                    }
                 }
             }
-        }
-        .navigationDestination(for: ConversationEntity.self) { channel in
-            MessageThreadView(conversation: channel)
         }
     }
 

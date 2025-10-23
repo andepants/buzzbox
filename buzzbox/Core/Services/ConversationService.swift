@@ -172,6 +172,37 @@ final class ConversationService {
 
     // MARK: - Channel Operations
 
+    /// Ensures user is in all default channels (idempotent - safe to call multiple times)
+    /// - Parameter userID: User ID to add to channels
+    /// - Note: This is called on app launch to handle users who signed up before auto-join was implemented
+    nonisolated func ensureUserInDefaultChannels(userID: String) async throws {
+        let defaultChannelIDs = ["general", "announcements", "off-topic"]
+
+        print("🔵 [CHANNELS] Ensuring user \(userID) is in default channels...")
+
+        for channelID in defaultChannelIDs {
+            // Check if user is already in channel (RTDB check)
+            let participantRef = database.child("conversations/\(channelID)/participantIDs/\(userID)")
+            let snapshot = try await participantRef.getData()
+
+            if snapshot.exists() {
+                print("✅ [CHANNELS] User already in \(channelID)")
+                continue
+            }
+
+            // User not in channel - add them
+            print("➕ [CHANNELS] Adding user to \(channelID)")
+            do {
+                try await addUserToChannel(userID: userID, channelID: channelID)
+            } catch {
+                // Log but don't fail - allow app to continue
+                print("⚠️ [CHANNELS] Failed to add user to \(channelID): \(error.localizedDescription)")
+            }
+        }
+
+        print("✅ [CHANNELS] User ensured in all default channels")
+    }
+
     /// Adds a user to a channel by updating participantIDs in Firestore and RTDB
     /// - Parameters:
     ///   - userID: User ID to add

@@ -56,3 +56,5 @@ secrets/
 .env.local
 .env.*.local
 config.local.json
+
+.build

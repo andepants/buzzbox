@@ -47,26 +47,9 @@ struct FanDMView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
-            if let conversation = andrewConversation {
-                // Has conversation with Andrew - show it
-                List {
-                    // Network status banner
-                    if !networkMonitor.isConnected {
-                        NetworkStatusBanner()
-                    }
-
-                    NavigationLink(value: conversation) {
-                        ConversationRowView(conversation: conversation)
-                    }
-                }
-                .navigationTitle("DMs")
-                .navigationDestination(for: ConversationEntity.self) { conv in
-                    MessageThreadView(conversation: conv)
-                }
-                .refreshable {
-                    await viewModel?.syncConversations()
-                }
+        if let conversation = andrewConversation {
+            // Show chat directly (skip list screen)
+            MessageThreadView(conversation: conversation)
                 .task {
                     setupViewModel()
                     await viewModel?.startRealtimeListener()
@@ -75,17 +58,16 @@ struct FanDMView: View {
                     viewModel?.stopRealtimeListener()
                     viewModel = nil  // Explicitly release ViewModel
                 }
-            } else {
-                // No conversation with Andrew - show empty state
-                EmptyDMView(
-                    isCreatingDM: $isCreatingDM,
-                    onMessageAndrew: {
-                        await createDMWithAndrew()
-                    }
-                )
-                .task {
-                    setupViewModel()
+        } else {
+            // No conversation with Andrew - show empty state
+            EmptyDMView(
+                isCreatingDM: $isCreatingDM,
+                onMessageAndrew: {
+                    await createDMWithAndrew()
                 }
+            )
+            .task {
+                setupViewModel()
             }
         }
     }

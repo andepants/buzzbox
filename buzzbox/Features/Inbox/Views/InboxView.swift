@@ -77,43 +77,44 @@ struct InboxView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
-            List {
-                // Network status banner
-                if !networkMonitor.isConnected {
-                    NetworkStatusBanner()
-                }
+        List {
+            // Network status banner
+            if !networkMonitor.isConnected {
+                NetworkStatusBanner()
+            }
 
-                // Conversations or empty state
-                if filteredConversations.isEmpty && searchText.isEmpty {
-                    emptyStateView
-                } else if filteredConversations.isEmpty {
-                    emptySearchView
-                } else {
-                    conversationsList
-                }
+            // Conversations or empty state
+            if filteredConversations.isEmpty && searchText.isEmpty {
+                emptyStateView
+            } else if filteredConversations.isEmpty {
+                emptySearchView
+            } else {
+                conversationsList
             }
-            .searchable(text: $searchText, prompt: "Search fan messages")
-            .navigationTitle("Inbox")
-            .refreshable {
-                await viewModel?.syncConversations()
+        }
+        .searchable(text: $searchText, prompt: "Search fan messages")
+        .navigationTitle("Inbox")
+        .navigationDestination(for: ConversationEntity.self) { conversation in
+            MessageThreadView(conversation: conversation)
+        }
+        .refreshable {
+            await viewModel?.syncConversations()
+        }
+        .task {
+            setupViewModel()
+            await viewModel?.startRealtimeListener()
+        }
+        .onDisappear {
+            viewModel?.stopRealtimeListener()
+            viewModel = nil  // Explicitly release ViewModel
+        }
+        .alert("Error", isPresented: .constant(viewModel?.error != nil)) {
+            Button("OK") {
+                viewModel?.error = nil
             }
-            .task {
-                setupViewModel()
-                await viewModel?.startRealtimeListener()
-            }
-            .onDisappear {
-                viewModel?.stopRealtimeListener()
-                viewModel = nil  // Explicitly release ViewModel
-            }
-            .alert("Error", isPresented: .constant(viewModel?.error != nil)) {
-                Button("OK") {
-                    viewModel?.error = nil
-                }
-            } message: {
-                if let error = viewModel?.error {
-                    Text(error.localizedDescription)
-                }
+        } message: {
+            if let error = viewModel?.error {
+                Text(error.localizedDescription)
             }
         }
     }
@@ -186,9 +187,6 @@ struct InboxView: View {
                     Label("Archive", systemImage: "archivebox")
                 }
             }
-        }
-        .navigationDestination(for: ConversationEntity.self) { conversation in
-            MessageThreadView(conversation: conversation)
         }
     }
 

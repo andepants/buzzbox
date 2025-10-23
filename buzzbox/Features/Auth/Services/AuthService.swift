@@ -317,14 +317,18 @@ final class AuthService: ObservableObject {
             let photoURL = data["photoURL"] as? String
             let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
 
-            // Parse userType and isPublic (with fallback to email-based assignment)
-            let userTypeRaw = data["userType"] as? String
+            // Parse userType (email-based logic takes precedence for creator)
             let userType: UserType
-            if let userTypeRaw = userTypeRaw, let parsedType = UserType(rawValue: userTypeRaw) {
+            if userEmail.lowercased() == CREATOR_EMAIL.lowercased() {
+                // Always identify creator by email (takes precedence over Firestore)
+                userType = .creator
+            } else if let userTypeRaw = data["userType"] as? String,
+                      let parsedType = UserType(rawValue: userTypeRaw) {
+                // Use Firestore value for other users
                 userType = parsedType
             } else {
-                // Fallback: auto-assign based on email
-                userType = userEmail.lowercased() == CREATOR_EMAIL.lowercased() ? .creator : .fan
+                // Fallback to fan for missing/invalid userType
+                userType = .fan
             }
             let isPublic = data["isPublic"] as? Bool ?? (userType == .creator)
 
@@ -523,14 +527,18 @@ final class AuthService: ObservableObject {
         let photoURL = data["photoURL"] as? String
         let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
 
-        // Parse userType and isPublic (with fallback to email-based assignment)
-        let userTypeRaw = data["userType"] as? String
+        // Parse userType (email-based logic takes precedence for creator)
         let userType: UserType
-        if let userTypeRaw = userTypeRaw, let parsedType = UserType(rawValue: userTypeRaw) {
+        if email.lowercased() == CREATOR_EMAIL.lowercased() {
+            // Always identify creator by email (takes precedence over Firestore)
+            userType = .creator
+        } else if let userTypeRaw = data["userType"] as? String,
+                  let parsedType = UserType(rawValue: userTypeRaw) {
+            // Use Firestore value for other users
             userType = parsedType
         } else {
-            // Fallback: auto-assign based on email
-            userType = email.lowercased() == CREATOR_EMAIL.lowercased() ? .creator : .fan
+            // Fallback to fan for missing/invalid userType
+            userType = .fan
         }
         let isPublic = data["isPublic"] as? Bool ?? (userType == .creator)
 
@@ -749,6 +757,14 @@ final class AuthService: ObservableObject {
         }
 
         // 2. Update Firebase Auth profile first (source of truth for Auth)
+        print("📝 [AUTH] Starting profile update for user: \(uid)")
+        if let photoURL = photoURL {
+            print("🖼️ [AUTH] Updating photoURL: \(photoURL.absoluteString)")
+        }
+        if let displayName = displayName {
+            print("👤 [AUTH] Updating displayName: \(displayName)")
+        }
+
         let changeRequest = currentUser.createProfileChangeRequest()
         var profileUpdated = false
 
@@ -763,6 +779,7 @@ final class AuthService: ObservableObject {
 
         if profileUpdated {
             try await changeRequest.commitChanges()
+            print("✅ [AUTH] Firebase Auth profile updated successfully")
         }
 
         // 3. Prepare update data for Firestore
@@ -776,6 +793,13 @@ final class AuthService: ObservableObject {
 
         // 4. Update Firestore user document
         try await firestore.collection("users").document(uid).updateData(updateData)
+        print("✅ [AUTH] Firestore user document updated")
+
+        // Verify Firestore update
+        let verifyDoc = try await firestore.collection("users").document(uid).getDocument()
+        if let verifiedPhotoURL = verifyDoc.data()?["photoURL"] as? String {
+            print("✅ [AUTH] Firestore photoURL verified: \(verifiedPhotoURL)")
+        }
 
         // 5. Update Realtime Database user profile
         var rtdbUpdateData: [String: Any] = [:]
@@ -789,6 +813,13 @@ final class AuthService: ObservableObject {
 
         let userRef = database.child("users").child(uid)
         try await userRef.updateChildValues(rtdbUpdateData)
+        print("✅ [AUTH] Realtime Database user profile updated")
+
+        // Verify RTDB update
+        let rtdbSnapshot = try await userRef.getData()
+        if let verifiedRTDBPhotoURL = rtdbSnapshot.childSnapshot(forPath: "profilePictureURL").value as? String {
+            print("✅ [AUTH] RTDB photoURL verified: \(verifiedRTDBPhotoURL)")
+        }
 
         // 6. Update local SwiftData UserEntity
         let descriptor = FetchDescriptor<UserEntity>(
@@ -802,11 +833,12 @@ final class AuthService: ObservableObject {
                 photoURL: photoURL?.absoluteString
             )
             try modelContext.save()
+            print("✅ [AUTH] SwiftData UserEntity updated with photoURL: \(existingUser.photoURL ?? "nil")")
         }
 
         // 7. Update published currentUser
         if let user = self.currentUser {
-            self.currentUser = User(
+            let updatedUser = User(
                 id: user.id,
                 email: user.email,
                 displayName: displayName ?? user.displayName,
@@ -815,6 +847,10 @@ final class AuthService: ObservableObject {
                 userType: user.userType,
                 isPublic: user.isPublic
             )
+            self.currentUser = updatedUser
+            print("✅ [AUTH] Published currentUser updated with photoURL: \(updatedUser.photoURL ?? "nil")")
         }
+
+        print("🎉 [AUTH] Profile update complete! All storage layers synchronized.")
     }
 }

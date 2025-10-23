@@ -86,6 +86,9 @@ struct buzzboxApp: App {
                 await authViewModel.refreshAuthIfNeeded(lastActiveDate: lastActiveDate)
             }
 
+            // Ensure FCM token is registered (helps with existing users)
+            appDelegate.refreshFCMToken()
+
             lastActiveDate = Date()
 
         case .inactive:

@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import SwiftData
 import FirebaseAuth
+import FirebaseFirestore
 import Combine
 
 /// Authentication view model
@@ -54,7 +55,7 @@ final class AuthViewModel: ObservableObject {
 
     // MARK: - Dependencies
 
-    private let authService: AuthService
+    let authService: AuthService
     private var displayNameCheckTask: Task<Void, Never>?
 
     // MARK: - Initialization
@@ -177,34 +178,65 @@ final class AuthViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        // Get ModelContext from environment (injected by parent view)
-        // For now, we'll handle this without ModelContext to avoid circular dependency
-        // The actual user fetch will happen when needed
-
         do {
             // Check if Firebase has a current user (Firebase persists automatically)
-            if let firebaseUser = Auth.auth().currentUser {
-                // Attempt to refresh token to verify it's still valid
-                let idToken = try await firebaseUser.getIDToken()
-
-                // Update Keychain with refreshed token
-                let keychainService = KeychainService()
-                try keychainService.save(token: idToken)
-
-                // Create minimal user object (full data can be fetched later if needed)
-                // Note: userType will be auto-assigned based on email in User.init
-                currentUser = User(
-                    id: firebaseUser.uid,
-                    email: firebaseUser.email ?? "",
-                    displayName: firebaseUser.displayName ?? "",
-                    photoURL: firebaseUser.photoURL?.absoluteString,
-                    createdAt: Date()
-                )
-
-                isAuthenticated = true
-            } else {
+            guard let firebaseUser = Auth.auth().currentUser else {
                 isAuthenticated = false
+                return
             }
+
+            // Attempt to refresh token to verify it's still valid
+            let idToken = try await firebaseUser.getIDToken()
+
+            // Update Keychain with refreshed token
+            let keychainService = KeychainService()
+            try keychainService.save(token: idToken)
+
+            // Fetch full user data from Firestore to get photoURL and other fields
+            let uid = firebaseUser.uid
+            let firestore = Firestore.firestore()
+            let userDoc = try await firestore.collection("users").document(uid).getDocument()
+
+            guard let data = userDoc.data() else {
+                // User document not found in Firestore - clear auth
+                isAuthenticated = false
+                try? keychainService.delete()
+                return
+            }
+
+            // Parse full user data from Firestore
+            let email = data["email"] as? String ?? firebaseUser.email ?? ""
+            let displayName = data["displayName"] as? String ?? firebaseUser.displayName ?? ""
+            let photoURL = data["photoURL"] as? String
+            let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+
+            // Parse userType (email-based logic takes precedence for creator)
+            let userType: UserType
+            if email.lowercased() == CREATOR_EMAIL.lowercased() {
+                userType = .creator
+            } else if let userTypeRaw = data["userType"] as? String,
+                      let parsedType = UserType(rawValue: userTypeRaw) {
+                userType = parsedType
+            } else {
+                userType = .fan
+            }
+            let isPublic = data["isPublic"] as? Bool ?? (userType == .creator)
+
+            // Create full user object with Firestore data
+            currentUser = User(
+                id: uid,
+                email: email,
+                displayName: displayName,
+                photoURL: photoURL,
+                createdAt: createdAt,
+                userType: userType,
+                isPublic: isPublic
+            )
+
+            // Note: authService.currentUser will be updated via Firebase Auth state listener
+            // No need to manually sync here
+
+            isAuthenticated = true
         } catch {
             isAuthenticated = false
 

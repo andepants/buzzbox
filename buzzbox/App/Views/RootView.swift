@@ -45,6 +45,7 @@ struct RootView: View {
                 LoginView()
             }
         }
+        .notificationBanner() // Show in-app notification banners
         .task {
             // Check auth status on app launch
             await authViewModel.checkAuthStatus()

@@ -46,6 +46,69 @@ struct MessageBubbleView: View {
         isFromCurrentUser && !message.isSystemMessage
     }
 
+    /// Get sender's display name from participants (for group/channel messages)
+    private var senderDisplayName: String {
+        guard let sender = participants.first(where: { $0.id == message.senderID }) else {
+            return "Unknown"
+        }
+        return sender.displayName
+    }
+
+    /// Check if username should be shown (only for group messages from others)
+    private var shouldShowUsername: Bool {
+        conversation.isGroup && !isFromCurrentUser && !message.isSystemMessage
+    }
+
+    /// Check if inline read receipt should be shown (only for 1:1 DMs)
+    private var shouldShowInlineReadReceipt: Bool {
+        // Only show for own messages in 1:1 conversations
+        guard isFromCurrentUser && !conversation.isGroup && !message.isSystemMessage else {
+            return false
+        }
+
+        // Get recipient ID (the other person in the DM)
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return false }
+        guard let recipientID = conversation.participantIDs.first(where: { $0 != currentUserID }) else {
+            return false
+        }
+
+        // Check if recipient has read the message
+        return message.readBy[recipientID] != nil
+    }
+
+    /// Format read receipt text (e.g., "Read at 2:34 PM" or "Read yesterday at 2:34 PM")
+    private var readReceiptText: String {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return "" }
+        guard let recipientID = conversation.participantIDs.first(where: { $0 != currentUserID }) else {
+            return ""
+        }
+        guard let readAt = message.readBy[recipientID] else { return "" }
+
+        let calendar = Calendar.current
+
+        // Check if read today
+        if calendar.isDateInToday(readAt) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return "Read at \(formatter.string(from: readAt))"
+        }
+
+        // Check if read yesterday
+        if calendar.isDateInYesterday(readAt) {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            return "Read yesterday at \(formatter.string(from: readAt))"
+        }
+
+        // Otherwise show full date and time
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return "Read \(formatter.string(from: readAt))"
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -80,6 +143,15 @@ struct MessageBubbleView: View {
             if isFromCurrentUser { Spacer(minLength: 60) }
 
             VStack(alignment: isFromCurrentUser ? .trailing : .leading, spacing: 4) {
+                // Username label (only for group/channel messages from others)
+                if shouldShowUsername {
+                    Text(senderDisplayName)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 16)
+                        .padding(.bottom, 2)
+                }
+
                 // Message bubble
                 Text(message.text)
                     .padding(.horizontal, 16)
@@ -102,17 +174,26 @@ struct MessageBubbleView: View {
                             .animation(.easeInOut(duration: 0.2), value: message.syncStatus)
                     }
                 }
+
+                // Inline read receipt (only for 1:1 DMs)
+                if shouldShowInlineReadReceipt {
+                    Text(readReceiptText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .transition(.opacity)
+                }
             }
 
             if !isFromCurrentUser { Spacer(minLength: 60) }
         }
-        .onLongPressGesture {
+        .onTapGesture {
+            // Show message details modal for own messages
             if canShowReadReceipts {
                 showReadReceipts = true
             }
         }
         .sheet(isPresented: $showReadReceipts) {
-            ReadReceiptsView(message: message, conversation: conversation, participants: participants)
+            MessageDetailsView(message: message, conversation: conversation, participants: participants)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
@@ -121,63 +202,76 @@ struct MessageBubbleView: View {
     // MARK: - Status Icon
 
     /// WhatsApp-style status icon with animations
+    /// Status icon with blue checkmark for read messages
+    /// WhatsApp-style status icon with animations
+    /// Status icon with blue checkmark for read messages
+    /// Only shown in 1:1 DMs (hidden in group chats)
     @ViewBuilder
     private var statusIcon: some View {
-        switch message.syncStatus {
-        case .pending:
-            // Sending - clock icon
-            Image(systemName: "clock")
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .accessibilityLabel("Sending")
-
-        case .failed:
-            // Failed - show retry button
-            Button {
-                retryMessage()
-            } label: {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.red)
-            }
-            .accessibilityLabel("Failed to send. Tap to retry.")
-
-        case .synced:
-            // Successfully synced - show delivery status
-            switch message.status {
-            case .sending:
-                // Should not happen when synced, but handle gracefully
+        // Only show status icons in 1:1 DMs, not in group chats
+        if !conversation.isGroup {
+            switch message.syncStatus {
+            case .pending:
+                // Sending - clock icon
                 Image(systemName: "clock")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
                     .accessibilityLabel("Sending")
 
-            case .sent:
-                // Sent to server - single checkmark
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
-                    .accessibilityLabel("Sent")
-
-            case .delivered:
-                // Delivered to recipient - double checkmark (gray)
-                HStack(spacing: 2) {
-                    Image(systemName: "checkmark")
-                    Image(systemName: "checkmark")
+            case .failed:
+                // Failed - show retry button
+                Button {
+                    retryMessage()
+                } label: {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.red)
                 }
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .accessibilityLabel("Delivered")
+                .accessibilityLabel("Failed to send. Tap to retry.")
 
-            case .read:
-                // Read by recipient - double checkmark (blue)
-                HStack(spacing: 2) {
+            case .synced:
+                // Successfully synced - show delivery status
+                switch message.status {
+                case .sending:
+                    // Should not happen when synced, but handle gracefully
+                    Image(systemName: "clock")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .accessibilityLabel("Sending")
+
+                case .sent:
+                    // Sent - single gray checkmark
                     Image(systemName: "checkmark")
-                    Image(systemName: "checkmark")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .accessibilityLabel("Sent")
+
+                case .delivered:
+                    // Delivered - double gray checkmarks (WhatsApp style)
+                    ZStack(alignment: .trailing) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                            .offset(x: -3)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+                    .accessibilityLabel("Delivered")
+
+                case .read:
+                    // Read - double blue checkmarks (WhatsApp style)
+                    ZStack(alignment: .trailing) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue)
+                            .offset(x: -3)
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue)
+                    }
+                    .accessibilityLabel("Read")
                 }
-                .font(.system(size: 12))
-                .foregroundColor(.blue)
-                .accessibilityLabel("Read")
             }
         }
     }

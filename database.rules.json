@@ -7,13 +7,21 @@
     // Story 5.7: Enforce creator-only channel restrictions
     "messages": {
       "$conversationId": {
-        // Only participants of the conversation can read messages
-        ".read": "auth != null && root.child('conversations').child($conversationId).child('participantIDs').child(auth.uid).exists()",
+        // All authenticated users can read channel messages (type == 'channel')
+        // Only participants can read DM messages (type == 'dm')
+        ".read": "auth != null && (root.child('conversations').child($conversationId).child('type').val() == 'channel' || root.child('conversations').child($conversationId).child('participantIDs').child(auth.uid).val() == true)",
         "$messageId": {
           // Story 5.7: Check if channel is creator-only, and if so, only allow creator to write
           // If isCreatorOnly is true, check if user is creator (userType == 'creator')
           // Otherwise, allow any participant to write
-          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid) && (root.child('conversations').child($conversationId).child('isCreatorOnly').val() != true || root.child('users').child(auth.uid).child('userType').val() == 'creator')"
+          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid) && (root.child('conversations').child($conversationId).child('isCreatorOnly').val() != true || root.child('users').child(auth.uid).child('userType').val() == 'creator')",
+
+          // Read receipts: Allow any user who can read the conversation to update readBy for themselves
+          "readBy": {
+            "$readerUserId": {
+              ".write": "auth != null && $readerUserId == auth.uid && (root.child('conversations').child($conversationId).child('type').val() == 'channel' || root.child('conversations').child($conversationId).child('participantIDs').child(auth.uid).val() == true)"
+            }
+          }
         }
       }
     },
@@ -28,13 +36,13 @@
       ".read": "auth != null",
 
       "$conversationId": {
-        // Participants can read the conversation
-        ".read": "auth != null && data.child('participantIDs').child(auth.uid).exists()",
+        // All authenticated users can read channels, only participants can read DMs
+        ".read": "auth != null && (data.child('type').val() == 'channel' || data.child('participantIDs').child(auth.uid).val() == true)",
 
         // Participants can write (create/update conversation)
         // Allow creation if user is in new participantIDs
         // Allow update if user is already a participant
-        ".write": "auth != null && ((!data.exists() && newData.child('participantIDs').child(auth.uid).exists()) || (data.exists() && data.child('participantIDs').child(auth.uid).exists()))",
+        ".write": "auth != null && ((!data.exists() && newData.child('participantIDs').child(auth.uid).val() == true) || (data.exists() && data.child('participantIDs').child(auth.uid).val() == true))",
 
         // Typing indicators
         // Structure: /conversations/{conversationId}/typing/{userId}

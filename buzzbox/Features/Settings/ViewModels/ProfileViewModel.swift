@@ -65,13 +65,13 @@ final class ProfileViewModel {
 
     // MARK: - Initialization
 
-    /// Initialize ProfileViewModel with optional dependencies
+    /// Initialize ProfileViewModel with required AuthService and optional dependencies
     /// - Parameters:
-    ///   - authService: AuthService instance
+    ///   - authService: AuthService instance (required - must be shared instance from AuthViewModel)
     ///   - storageService: StorageService instance
     ///   - displayNameService: DisplayNameService instance
     init(
-        authService: AuthService = AuthService(),
+        authService: AuthService,
         storageService: StorageService = StorageService(),
         displayNameService: DisplayNameService = DisplayNameService()
     ) {
@@ -165,6 +165,7 @@ final class ProfileViewModel {
 
             // Clear Kingfisher cache for old photo URL to prevent concurrent fetch issues
             if let oldPhotoURL = photoURL {
+                print("🗑️ [PROFILE] Clearing cache for old photo URL: \(oldPhotoURL.absoluteString)")
                 ImageCache.default.removeImage(forKey: oldPhotoURL.absoluteString)
                 ImageDownloader.default.cancel(url: oldPhotoURL)
             }
@@ -172,12 +173,26 @@ final class ProfileViewModel {
             let path = "profile_pictures/\(userId)/profile.jpg"
 
             // Upload to Firebase Storage
-            let downloadURL = try await storageService.uploadImage(image, path: path)
+            var downloadURL = try await storageService.uploadImage(image, path: path)
+            print("📸 [PROFILE] Upload returned URL: \(downloadURL.absoluteString)")
 
-            // Force Kingfisher to recognize this as a new image by clearing any existing cache
+            // Add cache-busting timestamp to force Kingfisher to treat this as a new URL
+            // This ensures the new image displays immediately instead of showing cached version
+            if var urlComponents = URLComponents(url: downloadURL, resolvingAgainstBaseURL: false) {
+                let timestamp = String(Int(Date().timeIntervalSince1970 * 1000))
+                urlComponents.queryItems = (urlComponents.queryItems ?? []) + [
+                    URLQueryItem(name: "t", value: timestamp)
+                ]
+                if let cacheBustedURL = urlComponents.url {
+                    downloadURL = cacheBustedURL
+                    print("🔄 [PROFILE] Cache-busted URL: \(downloadURL.absoluteString)")
+                }
+            }
+
+            // Clear any existing cache for the new URL (in case of retries)
             ImageCache.default.removeImage(forKey: downloadURL.absoluteString)
 
-            // Update local state
+            // Update local state with cache-busted URL
             photoURL = downloadURL
 
             // Automatically save to user profile (Firestore, RTDB, and local SwiftData)
@@ -192,11 +207,15 @@ final class ProfileViewModel {
             originalPhotoURL = downloadURL
             hasChanges = (displayName != originalDisplayName)
 
+            // Clear all Kingfisher caches to ensure fresh load
+            ImageCache.default.clearMemoryCache()
+            print("✅ [PROFILE] Cleared Kingfisher memory cache")
+
             // Success haptic feedback
             let generator = UINotificationFeedbackGenerator()
             generator.notificationOccurred(.success)
 
-            print("✅ [PROFILE] Profile picture uploaded and saved successfully")
+            print("✅ [PROFILE] Profile picture uploaded and saved successfully with URL: \(downloadURL.absoluteString)")
         } catch {
             errorMessage = error.localizedDescription
             showError = true

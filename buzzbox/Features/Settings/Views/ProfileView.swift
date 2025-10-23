@@ -14,7 +14,7 @@ import SwiftData
 struct ProfileView: View {
     // MARK: - Properties
 
-    @State private var viewModel = ProfileViewModel()
+    @State private var viewModel: ProfileViewModel?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -22,37 +22,58 @@ struct ProfileView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                profilePictureSection
+        Group {
+            if let viewModel = viewModel {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        profilePictureSection(viewModel: viewModel)
 
-                Divider()
-                    .padding(.vertical)
+                        Divider()
+                            .padding(.vertical)
 
-                accountInfoSection
+                        accountInfoSection(viewModel: viewModel)
 
-                Spacer()
+                        Spacer()
 
-                logoutButton
+                        logoutButton
+                    }
+                    .padding()
+                }
+                .navigationTitle("")
+                .navigationBarTitleDisplayMode(.inline)
+                .alert("Error", isPresented: Binding(
+                    get: { viewModel.showError },
+                    set: { self.viewModel?.showError = $0 }
+                )) {
+                    Button("OK", role: .cancel) { }
+                } message: {
+                    Text(viewModel.errorMessage ?? "Failed to upload profile picture.")
+                }
+                // Reload profile when currentUser changes (e.g., after login or profile update)
+                .onChange(of: authViewModel.currentUser) { _, newUser in
+                    if newUser != nil {
+                        viewModel.loadCurrentProfile()
+                    }
+                }
+            } else {
+                ProgressView()
             }
-            .padding()
-        }
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .alert("Error", isPresented: $viewModel.showError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(viewModel.errorMessage ?? "Failed to upload profile picture.")
         }
         .task {
-            // Load profile on appear
-            viewModel.loadCurrentProfile()
+            // Initialize viewModel with shared authService
+            if viewModel == nil {
+                viewModel = ProfileViewModel(authService: authViewModel.authService)
+            }
+        }
+        .onAppear {
+            // Reload profile data when view appears to ensure displayName is current
+            viewModel?.loadCurrentProfile()
         }
     }
 
     // MARK: - Profile Picture Section
 
-    private var profilePictureSection: some View {
+    private func profilePictureSection(viewModel: ProfileViewModel) -> some View {
         VStack(spacing: 12) {
             ZStack {
                 if let photoURL = viewModel.photoURL {
@@ -119,7 +140,7 @@ struct ProfileView: View {
 
     // MARK: - Account Info Section
 
-    private var accountInfoSection: some View {
+    private func accountInfoSection(viewModel: ProfileViewModel) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Account Information")
                 .font(.headline)
@@ -133,7 +154,7 @@ struct ProfileView: View {
                         .foregroundColor(.gray)
                     Spacer()
                     HStack(spacing: 4) {
-                        Text(authViewModel.currentUser?.displayName ?? viewModel.displayName)
+                        Text(viewModel.displayName)
                             .font(.subheadline)
                             .foregroundColor(.primary)
                             .fontWeight(.medium)
@@ -146,7 +167,7 @@ struct ProfileView: View {
                     }
                 }
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Username: \(authViewModel.currentUser?.displayName ?? viewModel.displayName)")
+                .accessibilityLabel("Username: \(viewModel.displayName)")
 
                 Divider()
 
@@ -199,4 +220,5 @@ struct ProfileView: View {
 #Preview {
     ProfileView()
         .modelContainer(for: [UserEntity.self], inMemory: true)
+        .environmentObject(AuthViewModel())
 }

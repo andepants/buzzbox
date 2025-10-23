@@ -248,6 +248,15 @@ final class ConversationViewModel {
 
         print("🎧 [LISTENER] Starting RTDB listener for user: \(currentUserID)")
 
+        // Ensure user is in default channels (handles existing users + new users)
+        // This is idempotent and safe to call on every app launch
+        do {
+            try await conversationService.ensureUserInDefaultChannels(userID: currentUserID)
+        } catch {
+            // Log but don't fail - allow app to continue
+            print("⚠️ [LISTENER] Failed to ensure user in channels (non-critical): \(error.localizedDescription)")
+        }
+
         let conversationsRef = Database.database().reference().child("conversations")
 
         realtimeListenerHandle = conversationsRef.observe(.value) { [weak self] snapshot in
@@ -291,13 +300,11 @@ final class ConversationViewModel {
 
     /// Processes conversation snapshot from RTDB
     private func processConversationSnapshot(_ snapshot: DataSnapshot, currentUserID: String) async {
-        print("🔄 [SYNC] Processing conversations for user: \(currentUserID)")
         var processedCount = 0
         var skippedCount = 0
 
         for child in snapshot.children.allObjects as? [DataSnapshot] ?? [] {
             guard let conversationData = child.value as? [String: Any] else {
-                print("⚠️ [SYNC] Skipping conversation \(child.key): invalid data format")
                 continue
             }
 
@@ -309,10 +316,7 @@ final class ConversationViewModel {
             let participantIDsDict = conversationData["participantIDs"] as? [String: Any] ?? [:]
             let participantIDs = Array(participantIDsDict.keys)
 
-            print("📋 [SYNC] Conversation: \(conversationID) | isGroup: \(isGroup) | name: \(groupName) | participants: \(participantIDs.count)")
-
             guard participantIDs.contains(currentUserID) else {
-                print("⏭️  [SYNC] Skipping \(conversationID): user not in participantIDs (\(participantIDs.count) participants)")
                 skippedCount += 1
                 continue
             }
@@ -324,6 +328,8 @@ final class ConversationViewModel {
             // Parse group fields (already declared above for logging)
             let groupPhotoURL = conversationData["groupPhotoURL"] as? String
             let isCreatorOnly = conversationData["isCreatorOnly"] as? Bool ?? false
+            let channelEmoji = conversationData["channelEmoji"] as? String
+            let channelDescription = conversationData["channelDescription"] as? String
 
             // Parse timestamps (RTDB stores in milliseconds)
             let createdAtMillis = conversationData["createdAt"] as? Double ?? 0
@@ -347,6 +353,8 @@ final class ConversationViewModel {
                     adminUserIDs: adminUserIDs,
                     isGroup: isGroup,
                     isCreatorOnly: isCreatorOnly,
+                    channelEmoji: channelEmoji,
+                    channelDescription: channelDescription,
                     createdAt: Date(timeIntervalSince1970: createdAtMillis / 1000),
                     syncStatus: .synced
                 )
@@ -358,7 +366,6 @@ final class ConversationViewModel {
                 conversation.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
 
                 modelContext.insert(conversation)
-                print("➕ [SYNC] New conversation: \(conversationID) | isGroup: \(isGroup) | name: \(groupName)")
                 processedCount += 1
             } else if let existing = existing {
                 // Update existing conversation
@@ -368,18 +375,21 @@ final class ConversationViewModel {
                 existing.groupPhotoURL = groupPhotoURL
                 existing.isGroup = isGroup
                 existing.isCreatorOnly = isCreatorOnly
+                existing.channelEmoji = channelEmoji
+                existing.channelDescription = channelDescription
                 existing.lastMessageText = conversationData["lastMessage"] as? String
                 existing.lastMessageAt = Date(timeIntervalSince1970: lastMessageMillis / 1000)
                 existing.unreadCount = conversationData["unreadCount"] as? Int ?? 0
                 existing.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
-                print("🔄 [SYNC] Updated conversation: \(conversationID) | isGroup: \(isGroup)")
                 processedCount += 1
             }
 
             try? modelContext.save()
         }
 
-        print("✅ [SYNC] Complete: \(processedCount) conversations synced, \(skippedCount) skipped")
+        if processedCount > 0 || skippedCount > 0 {
+            print("✅ [SYNC] \(processedCount) synced, \(skippedCount) skipped")
+        }
     }
 
     // MARK: - Cleanup

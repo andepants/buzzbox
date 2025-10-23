@@ -26,7 +26,7 @@ enum UserType: String, Codable, Sendable {
 
 /// Represents an authenticated user in the app
 /// Sendable conformance ensures safe usage across concurrency boundaries
-struct User: Sendable, Codable, Identifiable {
+struct User: Sendable, Codable, Identifiable, Equatable {
     /// Firebase Auth UID
     let id: String
 

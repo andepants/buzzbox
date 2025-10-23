@@ -9,6 +9,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseAuth
+import FirebaseFirestore
 @preconcurrency import FirebaseDatabase
 
 /// ViewModel for message thread with real-time RTDB streaming
@@ -144,7 +145,10 @@ final class MessageThreadViewModel {
 
     /// Marks all unread messages in conversation as read
     func markAsRead() async {
-        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+        guard let currentUserID = Auth.auth().currentUser?.uid else {
+            print("⚠️ [READ-RECEIPT] No authenticated user")
+            return
+        }
 
         let descriptor = FetchDescriptor<MessageEntity>(
             predicate: #Predicate { message in
@@ -153,19 +157,30 @@ final class MessageThreadViewModel {
             }
         )
 
-        guard let fetchedMessages = try? modelContext.fetch(descriptor) else { return }
+        guard let fetchedMessages = try? modelContext.fetch(descriptor) else {
+            print("⚠️ [READ-RECEIPT] Failed to fetch messages")
+            return
+        }
 
         // Filter for unread messages
         let messages = fetchedMessages.filter { $0.status != .read }
 
+        print("📖 [READ-RECEIPT] Marking \(messages.count) messages as read in conversation: \(conversationID)")
+
         for message in messages {
+            print("  ✓ [READ-RECEIPT] Marking message \(message.id) as read (was: \(message.status.rawValue))")
             message.status = .read
 
             // Update RTDB
             Task { @MainActor in
-                try? await messagesRef.child(message.id).updateChildValues([
-                    "status": "read"
-                ])
+                do {
+                    try await messagesRef.child(message.id).updateChildValues([
+                        "status": "read"
+                    ])
+                    print("  ✅ [READ-RECEIPT] Updated RTDB for message \(message.id)")
+                } catch {
+                    print("  ❌ [READ-RECEIPT] Failed to update RTDB for message \(message.id): \(error.localizedDescription)")
+                }
             }
         }
 
@@ -213,8 +228,10 @@ final class MessageThreadViewModel {
 
     private func handleIncomingMessage(_ snapshot: DataSnapshot) async {
         guard let messageData = snapshot.value as? [String: Any] else { return }
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
 
         let messageID = snapshot.key
+        let senderID = messageData["senderID"] as? String ?? ""
 
         // Check if message already exists locally (duplicate detection)
         let descriptor = FetchDescriptor<MessageEntity>(
@@ -229,20 +246,43 @@ final class MessageThreadViewModel {
             let serverTimestampMs = messageData["serverTimestamp"] as? Double ?? 0
             let serverTimestamp = serverTimestampMs > 0 ? Date(timeIntervalSince1970: serverTimestampMs / 1000.0) : nil
 
+            // Determine initial status
+            // - If from current user: use RTDB status (sent/delivered/read)
+            // - If from another user: mark as delivered (we just received it)
+            let isFromCurrentUser = senderID == currentUserID
+            let rtdbStatus = MessageStatus(rawValue: messageData["status"] as? String ?? "sent") ?? .sent
+            let initialStatus: MessageStatus = isFromCurrentUser ? rtdbStatus : .delivered
+
             let message = MessageEntity(
                 id: messageID,
                 conversationID: conversationID,
-                senderID: messageData["senderID"] as? String ?? "",
+                senderID: senderID,
                 text: messageData["text"] as? String ?? "",
                 localCreatedAt: serverTimestamp ?? Date(), // Use server timestamp if available
                 serverTimestamp: serverTimestamp,
                 sequenceNumber: messageData["sequenceNumber"] as? Int64,
-                status: MessageStatus(rawValue: messageData["status"] as? String ?? "sent") ?? .sent,
+                status: initialStatus,
                 syncStatus: .synced
             )
 
             modelContext.insert(message)
             try? modelContext.save()
+
+            // If this is someone else's message, mark it as delivered in RTDB
+            if !isFromCurrentUser {
+                Task { @MainActor in
+                    try? await messagesRef.child(messageID).updateChildValues([
+                        "status": "delivered"
+                    ])
+                }
+
+                // Trigger in-app notification for new message
+                await triggerNotificationForMessage(
+                    messageID: messageID,
+                    senderID: senderID,
+                    text: messageData["text"] as? String ?? ""
+                )
+            }
         } else if let existingMessage = existing {
             // Update existing message if it was pending (our own message synced)
             if existingMessage.syncStatus == .pending {
@@ -263,16 +303,25 @@ final class MessageThreadViewModel {
 
         let messageID = snapshot.key
 
+        print("🔄 [MESSAGE-UPDATE] Received update for message: \(messageID)")
+        print("   Status: \(messageData["status"] as? String ?? "nil")")
+
         // Find existing message
         let descriptor = FetchDescriptor<MessageEntity>(
             predicate: #Predicate { $0.id == messageID }
         )
 
-        guard let existing = try? modelContext.fetch(descriptor).first else { return }
+        guard let existing = try? modelContext.fetch(descriptor).first else {
+            print("   ⚠️ [MESSAGE-UPDATE] Message not found locally")
+            return
+        }
+
+        print("   Current local status: \(existing.status.rawValue)")
 
         // Update status (delivered → read)
         if let statusString = messageData["status"] as? String,
            let status = MessageStatus(rawValue: statusString) {
+            print("   ✅ [MESSAGE-UPDATE] Updating status: \(existing.status.rawValue) → \(status.rawValue)")
             existing.status = status
             try? modelContext.save()
         }
@@ -285,6 +334,41 @@ final class MessageThreadViewModel {
             "lastMessage": text,
             "lastMessageTimestamp": ServerValue.timestamp()
         ])
+    }
+
+    /// Triggers in-app notification when new message arrives from another user
+    private func triggerNotificationForMessage(
+        messageID: String,
+        senderID: String,
+        text: String
+    ) async {
+        // Fetch sender's name from Firestore
+        let senderName = await fetchSenderName(senderID: senderID)
+
+        // Trigger in-app notification banner (works on simulator)
+        await NotificationService.shared.showInAppNotification(
+            title: senderName,
+            body: text,
+            conversationID: conversationID
+        )
+
+        // Also schedule local notification for background (works on simulator)
+        await NotificationService.shared.scheduleLocalNotification(
+            title: senderName,
+            body: text,
+            conversationID: conversationID
+        )
+    }
+
+    /// Fetches sender display name from Firestore
+    private func fetchSenderName(senderID: String) async -> String {
+        do {
+            let db = FirebaseFirestore.Firestore.firestore()
+            let doc = try await db.collection("users").document(senderID).getDocument()
+            return doc.data()?["displayName"] as? String ?? "Unknown User"
+        } catch {
+            return "Unknown User"
+        }
     }
 
 }

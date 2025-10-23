@@ -222,6 +222,13 @@ struct MessageThreadView: View {
             }
         }
         .task {
+            print("📱 [THREAD] MessageThreadView opened for: \(conversation.displayName ?? conversation.id)")
+            print("  🔐 Initial isCreatorOnly state: \(conversation.isCreatorOnly)")
+
+            // Notify NotificationService that user is viewing this conversation
+            // (prevents duplicate in-app notifications for this conversation)
+            NotificationService.shared.setCurrentConversation(conversation.id)
+
             // Check creator-only posting permission
             await checkPostingPermission()
 
@@ -251,6 +258,9 @@ struct MessageThreadView: View {
             await viewModel.markAsRead()
         }
         .onDisappear {
+            // Clear current conversation tracking for notifications
+            NotificationService.shared.setCurrentConversation(nil)
+
             // Cleanup: Stop typing
             if let currentUserID = Auth.auth().currentUser?.uid {
                 TypingIndicatorService.shared.stopTyping(
@@ -283,10 +293,25 @@ struct MessageThreadView: View {
     /// [Source: Story 5.3 - Channel System]
     private func checkPostingPermission() async {
         guard let currentUserID = Auth.auth().currentUser?.uid else {
+            print("❌ [PERMISSION] No authenticated user")
             canPost = false
             return
         }
 
+        print("🔍 [PERMISSION] Checking posting permission for conversation: \(conversation.displayName ?? conversation.id)")
+        print("  📋 Conversation ID: \(conversation.id)")
+        print("  🔐 isCreatorOnly: \(conversation.isCreatorOnly)")
+        print("  👥 isGroup: \(conversation.isGroup)")
+        print("  🆔 Current User ID: \(currentUserID)")
+
+        // ✅ DMs: Always allow posting (both participants can message each other)
+        if !conversation.isGroup {
+            canPost = true
+            print("  ✅ canPost result: TRUE (DM - always allowed)")
+            return
+        }
+
+        // ✅ Channels: Check creator-only restrictions
         let descriptor = FetchDescriptor<UserEntity>(
             predicate: #Predicate { $0.id == currentUserID }
         )
@@ -294,17 +319,24 @@ struct MessageThreadView: View {
         do {
             let users = try modelContext.fetch(descriptor)
             guard let currentUser = users.first else {
+                print("❌ [PERMISSION] User not found in SwiftData")
                 canPost = false
                 return
             }
 
+            print("  👤 User email: \(currentUser.email)")
+            print("  🎭 User type: \(currentUser.userType.rawValue)")
+            print("  ⭐ isCreator: \(currentUser.isCreator)")
+
             canPost = conversation.canUserPost(isCreator: currentUser.isCreator)
 
+            print("  ✅ canPost result: \(canPost)")
+
             if !canPost {
-                print("🔒 User cannot post to creator-only channel: \(conversation.displayName ?? conversation.id)")
+                print("🔒 [PERMISSION] User cannot post to creator-only channel")
             }
         } catch {
-            print("⚠️ Failed to check posting permission: \(error.localizedDescription)")
+            print("⚠️ [PERMISSION] Failed to check posting permission: \(error.localizedDescription)")
             canPost = false
         }
     }
@@ -342,28 +374,31 @@ struct MessageThreadView: View {
     private func sendMessage() async {
         guard let currentUserID = Auth.auth().currentUser?.uid else { return }
 
-        // Check creator-only permission
-        let descriptor = FetchDescriptor<UserEntity>(
-            predicate: #Predicate { $0.id == currentUserID }
-        )
+        // ✅ DMs: Always allow sending (both participants can message each other)
+        // ✅ Channels: Check creator-only permission
+        if conversation.isGroup {
+            let descriptor = FetchDescriptor<UserEntity>(
+                predicate: #Predicate { $0.id == currentUserID }
+            )
 
-        do {
-            let users = try modelContext.fetch(descriptor)
-            guard let currentUser = users.first else { return }
+            do {
+                let users = try modelContext.fetch(descriptor)
+                guard let currentUser = users.first else { return }
 
-            // Check if user can post to this conversation
-            if !conversation.canUserPost(isCreator: currentUser.isCreator) {
-                // Show error: User cannot post to creator-only channel
-                print("⚠️ User cannot post to creator-only channel")
-                #if os(iOS)
-                let generator = UINotificationFeedbackGenerator()
-                generator.notificationOccurred(.error)
-                #endif
+                // Check if user can post to this conversation
+                if !conversation.canUserPost(isCreator: currentUser.isCreator) {
+                    // Show error: User cannot post to creator-only channel
+                    print("⚠️ User cannot post to creator-only channel")
+                    #if os(iOS)
+                    let generator = UINotificationFeedbackGenerator()
+                    generator.notificationOccurred(.error)
+                    #endif
+                    return
+                }
+            } catch {
+                print("⚠️ Failed to fetch current user: \(error.localizedDescription)")
                 return
             }
-        } catch {
-            print("⚠️ Failed to fetch current user: \(error.localizedDescription)")
-            return
         }
 
         let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -402,6 +437,13 @@ struct MessageThreadView: View {
     }
 
     private func loadRecipientName() async {
+        // For group channels, use the group's display name directly
+        if conversation.isGroup {
+            recipientDisplayName = conversation.displayName ?? "Group Chat"
+            return
+        }
+
+        // For DMs, load the recipient's display name
         guard let currentUserID = Auth.auth().currentUser?.uid else { return }
         guard let recipientID = conversation.getRecipientID(currentUserID: currentUserID) else {
             return

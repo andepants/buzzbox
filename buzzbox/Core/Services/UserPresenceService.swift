@@ -51,22 +51,32 @@ final class UserPresenceService {
 
     /// Set user as online with auto-cleanup on disconnect
     func setOnline() async {
-        guard let userID = Auth.auth().currentUser?.uid else { return }
+        guard let userID = Auth.auth().currentUser?.uid else {
+            print("⚠️ [PRESENCE] setOnline skipped - no authenticated user")
+            return
+        }
 
+        print("🟢 [PRESENCE] Setting user \(userID) as ONLINE...")
         let presenceRef = database.child("userPresence/\(userID)")
 
         do {
             // Set online status
             try await presenceRef.child("online").setValue(true)
+            print("   ✓ [PRESENCE] Set online = true")
+
             try await presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
+            print("   ✓ [PRESENCE] Set lastSeen timestamp")
 
             // ✅ CRITICAL: Auto-cleanup on disconnect (app crash, force quit, network drop)
             try await presenceRef.child("online").onDisconnectRemoveValue()
-            try await presenceRef.child("lastSeen").onDisconnectSetValue(ServerValue.timestamp())
+            print("   ✓ [PRESENCE] Set onDisconnect for online")
 
-            print("✅ User presence: ONLINE")
+            try await presenceRef.child("lastSeen").onDisconnectSetValue(ServerValue.timestamp())
+            print("   ✓ [PRESENCE] Set onDisconnect for lastSeen")
+
+            print("✅ [PRESENCE] User presence: ONLINE")
         } catch {
-            print("❌ Failed to set online presence: \(error.localizedDescription)")
+            print("❌ [PRESENCE] Failed to set online presence: \(error.localizedDescription)")
         }
     }
 
@@ -173,16 +183,25 @@ final class UserPresenceService {
         userID: String,
         onChange: @escaping (PresenceStatus) -> Void
     ) -> DatabaseHandle {
+        print("👂 [PRESENCE] Starting listener for user: \(userID)")
         let presenceRef = database.child("userPresence/\(userID)")
 
         let handle = presenceRef.observe(.value) { snapshot in
+            print("📡 [PRESENCE] Received update for user: \(userID)")
+            print("   Snapshot exists: \(snapshot.exists())")
+            print("   Snapshot value: \(snapshot.value ?? "nil")")
+
             let isOnline = snapshot.childSnapshot(forPath: "online").value as? Bool ?? false
             let lastSeenTimestamp = snapshot.childSnapshot(forPath: "lastSeen").value as? TimeInterval ?? 0
+
+            print("   Parsed: isOnline=\(isOnline), lastSeen=\(lastSeenTimestamp)")
 
             let status = PresenceStatus(
                 isOnline: isOnline,
                 lastSeen: Date(timeIntervalSince1970: lastSeenTimestamp / 1000)
             )
+
+            print("   Status: \(status.displayText)")
 
             Task { @MainActor in
                 onChange(status)
