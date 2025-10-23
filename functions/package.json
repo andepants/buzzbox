@@ -12,7 +12,10 @@
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
     "lint": "eslint --ext .js,.ts .",
-    "lint:fix": "eslint --ext .js,.ts . --fix"
+    "lint:fix": "eslint --ext .js,.ts . --fix",
+    "import-faqs": "npm run build && node lib/scripts/importFAQsREST.js",
+    "import-creator-profile": "npm run build && node lib/scripts/importCreatorProfile.js",
+    "seed-channels": "npm run build && node lib/scripts/seedDefaultChannels.js"
   },
   "engines": {
     "node": "20"

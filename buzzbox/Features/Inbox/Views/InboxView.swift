@@ -104,6 +104,7 @@ struct InboxView: View {
             }
             .onDisappear {
                 viewModel?.stopRealtimeListener()
+                viewModel = nil  // Explicitly release ViewModel
             }
             .alert("Error", isPresented: .constant(viewModel?.error != nil)) {
                 Button("OK") {

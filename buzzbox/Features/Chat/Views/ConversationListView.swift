@@ -98,6 +98,7 @@ struct ConversationListView: View {
             }
             .onDisappear {
                 viewModel?.stopRealtimeListener()
+                viewModel = nil  // Explicitly release ViewModel
             }
             .sheet(isPresented: $showRecipientPicker) {
                 RecipientPickerView(onSelect: { userID in

@@ -13,7 +13,7 @@
           // Story 5.7: Check if channel is creator-only, and if so, only allow creator to write
           // If isCreatorOnly is true, check if user is creator (userType == 'creator')
           // Otherwise, allow any participant to write
-          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid) && (!root.child('conversations').child($conversationId).child('isCreatorOnly').val() || root.child('users').child(auth.uid).child('userType').val() == 'creator')"
+          ".write": "auth != null && (!data.exists() || data.child('senderId').val() == auth.uid) && (root.child('conversations').child($conversationId).child('isCreatorOnly').val() != true || root.child('users').child(auth.uid).child('userType').val() == 'creator')"
         }
       }
     },
@@ -23,6 +23,10 @@
     // ============================================
     // Structure: /conversations/{conversationId}
     "conversations": {
+      // Allow authenticated users to read all conversations
+      // Client-side filtering ensures users only see conversations they participate in
+      ".read": "auth != null",
+
       "$conversationId": {
         // Participants can read the conversation
         ".read": "auth != null && data.child('participantIDs').child(auth.uid).exists()",

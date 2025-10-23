@@ -73,6 +73,7 @@ struct FanDMView: View {
                 }
                 .onDisappear {
                     viewModel?.stopRealtimeListener()
+                    viewModel = nil  // Explicitly release ViewModel
                 }
             } else {
                 // No conversation with Andrew - show empty state

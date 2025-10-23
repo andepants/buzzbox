@@ -1,0 +1,43 @@
+{
+  "conversations": {
+    "general": {
+      "participantIDs": {},
+      "adminUserIDs": {},
+      "isGroup": true,
+      "isCreatorOnly": false,
+      "groupName": "#general",
+      "groupPhotoURL": "",
+      "lastMessage": "Welcome to #general! General discussion and community chat",
+      "lastMessageTimestamp": 0,
+      "createdAt": 0,
+      "updatedAt": 0,
+      "unreadCount": 0
+    },
+    "announcements": {
+      "participantIDs": {},
+      "adminUserIDs": {},
+      "isGroup": true,
+      "isCreatorOnly": true,
+      "groupName": "#announcements",
+      "groupPhotoURL": "",
+      "lastMessage": "Welcome to #announcements! Important updates from Andrew",
+      "lastMessageTimestamp": 0,
+      "createdAt": 0,
+      "updatedAt": 0,
+      "unreadCount": 0
+    },
+    "off-topic": {
+      "participantIDs": {},
+      "adminUserIDs": {},
+      "isGroup": true,
+      "isCreatorOnly": false,
+      "groupName": "#off-topic",
+      "groupPhotoURL": "",
+      "lastMessage": "Welcome to #off-topic! Casual conversations and off-topic chat",
+      "lastMessageTimestamp": 0,
+      "createdAt": 0,
+      "updatedAt": 0,
+      "unreadCount": 0
+    }
+  }
+}

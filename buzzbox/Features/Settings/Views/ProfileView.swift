@@ -22,45 +22,31 @@ struct ProfileView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    profilePictureSection
+        ScrollView {
+            VStack(spacing: 20) {
+                profilePictureSection
 
-                    Divider()
-                        .padding(.vertical)
+                Divider()
+                    .padding(.vertical)
 
-                    accountInfoSection
+                accountInfoSection
 
-                    Divider()
-                        .padding(.vertical)
+                Spacer()
 
-                    displayNameSection
-
-                    Spacer()
-
-                    saveButton
-
-                    logoutButton
-                }
-                .padding()
+                logoutButton
             }
-            .navigationTitle("Profile")
-            .navigationBarTitleDisplayMode(.inline)
-            .alert("Profile Updated", isPresented: $viewModel.showSuccess) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text("Your profile has been updated successfully.")
-            }
-            .alert("Error", isPresented: $viewModel.showError) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(viewModel.errorMessage ?? "Failed to update profile.")
-            }
-            .task {
-                // Load profile on appear
-                viewModel.loadCurrentProfile()
-            }
+            .padding()
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Error", isPresented: $viewModel.showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(viewModel.errorMessage ?? "Failed to upload profile picture.")
+        }
+        .task {
+            // Load profile on appear
+            viewModel.loadCurrentProfile()
         }
     }
 
@@ -185,76 +171,6 @@ struct ProfileView: View {
             .cornerRadius(10)
         }
         .padding(.horizontal)
-    }
-
-    // MARK: - Display Name Section
-
-    private var displayNameSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Username")
-                .font(.caption)
-                .foregroundColor(.gray)
-
-            TextField("Username", text: $viewModel.displayName)
-                .textFieldStyle(.roundedBorder)
-                .autocapitalization(.none)
-                .disabled(viewModel.isLoading)
-                .accessibilityLabel("Username")
-                .onChange(of: viewModel.displayName) { _, newValue in
-                    Task {
-                        await viewModel.checkDisplayNameAvailability(newValue)
-                    }
-                }
-
-            // Availability indicator
-            if viewModel.isCheckingAvailability {
-                HStack {
-                    ProgressView()
-                        .frame(width: 20, height: 20)
-                    Text("Checking availability...")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                }
-            } else if !viewModel.displayNameError.isEmpty {
-                Text(viewModel.displayNameError)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            } else if viewModel.displayNameAvailable && !viewModel.displayName.isEmpty {
-                Label("Available", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundColor(.green)
-            }
-        }
-        .padding(.horizontal)
-    }
-
-    // MARK: - Save Button
-
-    private var saveButton: some View {
-        Button(action: {
-            Task {
-                await viewModel.updateProfile(modelContext: modelContext)
-            }
-        }) {
-            HStack {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        .frame(width: 20, height: 20)
-                    Text("Saving...")
-                } else {
-                    Text("Save Changes")
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(viewModel.canSave ? Color.blue : Color.gray)
-            .foregroundColor(.white)
-            .cornerRadius(10)
-        }
-        .disabled(!viewModel.canSave || viewModel.isLoading)
-        .padding(.horizontal)
-        .accessibilityIdentifier("saveButton")
     }
 
     // MARK: - Logout Button

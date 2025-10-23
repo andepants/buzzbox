@@ -134,11 +134,23 @@ final class ConversationService {
 
         print("✅ User found in Firestore: \(userID)")
 
+        // Parse userType with fallback logic (matching AuthService pattern)
+        let email = userData["email"] as? String ?? ""
+        let userTypeRaw = userData["userType"] as? String
+        let userType: UserType
+        if let userTypeRaw = userTypeRaw, let parsedType = UserType(rawValue: userTypeRaw) {
+            userType = parsedType
+        } else {
+            // Fallback: auto-assign based on email (andrewsheim@gmail.com = creator)
+            userType = email.lowercased() == "andrewsheim@gmail.com" ? .creator : .fan
+        }
+
         return UserEntity(
             id: userID,
-            email: userData["email"] as? String ?? "",
+            email: email,
             displayName: userData["displayName"] as? String ?? "",
-            photoURL: userData["profilePictureURL"] as? String
+            photoURL: userData["photoURL"] as? String,
+            userType: userType
         )
     }
 
@@ -203,6 +215,74 @@ final class ConversationService {
         print("✅ User \(userID) auto-joined to default channels")
     }
 
+    // MARK: - Auto-Create DM with Creator
+
+    /// Auto-creates a DM conversation between a new fan and the creator (Andrew)
+    /// - Parameters:
+    ///   - fanUserID: The new fan's user ID
+    ///   - creatorEmail: Creator's email (andrewsheim@gmail.com)
+    /// - Returns: The conversation ID for the DM
+    /// - Throws: Database errors
+    /// - Note: This is called during signup to automatically establish a DM with Andrew
+    nonisolated func autoCreateDMWithCreator(
+        fanUserID: String,
+        creatorEmail: String
+    ) async throws -> String {
+        print("🔵 [CONVERSATION] Auto-creating DM between fan \(fanUserID) and creator \(creatorEmail)")
+
+        // 1. Find creator user in Firestore
+        let snapshot = try await Firestore.firestore()
+            .collection("users")
+            .whereField("email", isEqualTo: creatorEmail)
+            .limit(to: 1)
+            .getDocuments()
+
+        guard let creatorDoc = snapshot.documents.first else {
+            print("❌ [CONVERSATION] Creator not found: \(creatorEmail)")
+            throw NSError(domain: "ConversationService", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "Creator not found"
+            ])
+        }
+
+        let creatorID = creatorDoc.documentID
+
+        // 2. Generate deterministic conversation ID (sorted participant IDs)
+        let participants = [fanUserID, creatorID].sorted()
+        let conversationID = participants.joined(separator: "_")
+
+        print("🔵 [CONVERSATION] Generated conversation ID: \(conversationID)")
+
+        // 3. Check if conversation already exists in RTDB
+        let conversationRef = database.child("conversations/\(conversationID)")
+        let existingSnapshot = try await conversationRef.getData()
+
+        if existingSnapshot.exists() {
+            print("✅ [CONVERSATION] DM already exists: \(conversationID)")
+            return conversationID
+        }
+
+        // 4. Create conversation in RTDB
+        let participantIDsDict = participants.reduce(into: [String: Bool]()) {
+            $0[$1] = true
+        }
+
+        let conversationData: [String: Any] = [
+            "participantIDs": participantIDsDict,
+            "lastMessage": "",
+            "lastMessageTimestamp": ServerValue.timestamp(),
+            "createdAt": ServerValue.timestamp(),
+            "updatedAt": ServerValue.timestamp(),
+            "unreadCount": 0,
+            "isGroup": false,
+            "isCreatorOnly": false
+        ]
+
+        try await conversationRef.setValue(conversationData)
+        print("✅ [CONVERSATION] Created DM in RTDB: \(conversationID)")
+
+        return conversationID
+    }
+
     // MARK: - System Messages
 
     /// Creates and sends a system message to RTDB
@@ -228,5 +308,40 @@ final class ConversationService {
 
         try await messageRef.setValue(messageData)
         print("✅ System message sent to RTDB: \(messageID)")
+    }
+
+    /// Sends a welcome message from the creator to a new fan
+    /// - Parameters:
+    ///   - text: Welcome message text
+    ///   - conversationID: Conversation ID
+    ///   - senderID: Creator's user ID
+    /// - Throws: Database errors
+    /// - Note: Unlike system messages, this appears as a regular message from the creator
+    nonisolated func sendWelcomeMessage(
+        text: String,
+        conversationID: String,
+        senderID: String
+    ) async throws {
+        let messageID = UUID().uuidString
+        let messageRef = database.child("messages/\(conversationID)/\(messageID)")
+
+        let messageData: [String: Any] = [
+            "senderID": senderID,
+            "text": text,
+            "serverTimestamp": ServerValue.timestamp(),
+            "status": "sent",
+            "isSystemMessage": false
+        ]
+
+        try await messageRef.setValue(messageData)
+        print("✅ [CONVERSATION] Welcome message sent from \(senderID) to conversation \(conversationID)")
+
+        // Update conversation's lastMessage and lastMessageTimestamp
+        let conversationRef = database.child("conversations/\(conversationID)")
+        try await conversationRef.updateChildValues([
+            "lastMessage": text,
+            "lastMessageTimestamp": ServerValue.timestamp(),
+            "updatedAt": ServerValue.timestamp()
+        ])
     }
 }

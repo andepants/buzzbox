@@ -1,0 +1,117 @@
+/**
+ * Import FAQs Script (REST API version)
+ *
+ * Imports FAQ data from faqs-preseed.json into Firestore using REST API.
+ * This version uses Firebase CLI authentication instead of service account.
+ * Run with: npm run import-faqs
+ */
+
+import * as fs from "fs";
+import * as path from "path";
+import {execSync} from "child_process";
+
+interface FAQ {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+  keywords: string[];
+}
+
+interface FAQData {
+  faqs: FAQ[];
+}
+
+const PROJECT_ID = "buzzbox-ios";
+const FIRESTORE_API = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+async function getAccessToken(): Promise<string> {
+  try {
+    // Get access token from gcloud (uses existing Firebase CLI auth)
+    const token = execSync("gcloud auth print-access-token", {
+      encoding: "utf-8",
+    }).trim();
+    return token;
+  } catch (error) {
+    console.error("❌ Error getting access token. Make sure you're logged in:");
+    console.error("   Run: firebase login");
+    throw error;
+  }
+}
+
+async function createDocument(
+  collectionId: string,
+  documentId: string,
+  data: Record<string, unknown>,
+  accessToken: string
+): Promise<void> {
+  const url = `${FIRESTORE_API}/${collectionId}?documentId=${documentId}`;
+
+  // Convert data to Firestore format
+  const firestoreDoc = {
+    fields: {
+      question: {stringValue: data.question},
+      answer: {stringValue: data.answer},
+      category: {stringValue: data.category},
+      keywords: {
+        arrayValue: {
+          values: data.keywords.map((k: string) => ({stringValue: k})),
+        },
+      },
+      embedding: {nullValue: null},
+    },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(firestoreDoc),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create document ${documentId}: ${error}`);
+  }
+}
+
+async function importFAQs() {
+  try {
+    console.log("🚀 Starting FAQ import...\n");
+
+    // Get access token
+    console.log("🔐 Getting Firebase access token...");
+    const accessToken = await getAccessToken();
+    console.log("✅ Authenticated\n");
+
+    // Read the FAQ data file
+    const dataPath = path.join(__dirname, "../../../docs/data/faqs-preseed.json");
+    console.log(`📁 Reading FAQs from: ${dataPath}`);
+
+    const rawData = fs.readFileSync(dataPath, "utf-8");
+    const data: FAQData = JSON.parse(rawData);
+
+    console.log(`📊 Found ${data.faqs.length} FAQs to import\n`);
+
+    // Import each FAQ
+    for (const faq of data.faqs) {
+      await createDocument("faqs", faq.id, faq, accessToken);
+      console.log(`✅ Created: ${faq.id} - "${faq.question}"`);
+    }
+
+    console.log("\n🎉 Success! All FAQs imported to Firestore");
+    console.log("\n📍 Collection: faqs");
+    console.log(`📍 Documents: ${data.faqs.length}`);
+    console.log("\n💡 Next: Run Story 6.3 to generate embeddings for these FAQs\n");
+
+    process.exit(0);
+  } catch (error) {
+    console.error("\n❌ Error importing FAQs:", error);
+    process.exit(1);
+  }
+}
+
+// Run the import
+importFAQs();

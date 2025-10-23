@@ -30,7 +30,6 @@ struct ChannelsView: View {
     ) private var channels: [ConversationEntity]
 
     @State private var viewModel: ConversationViewModel?
-    @State private var showProfile = false
     @State private var searchText = ""
     @EnvironmentObject var networkMonitor: NetworkMonitor
     @EnvironmentObject var authViewModel: AuthViewModel
@@ -83,11 +82,6 @@ struct ChannelsView: View {
                 NetworkStatusBanner()
             }
 
-            // Message Andrew button for fans (Story 5.6: AC 7)
-            if authViewModel.currentUser?.isFan == true {
-                messageAndrewButton
-            }
-
             // Channels or empty state
             if filteredChannels.isEmpty && searchText.isEmpty {
                 emptyStateView
@@ -100,8 +94,15 @@ struct ChannelsView: View {
         .searchable(text: $searchText, prompt: "Search channels")
         .navigationTitle("Channels")
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                profileButton
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    Task {
+                        await viewModel?.syncConversations()
+                    }
+                } label: {
+                    Label("Sync", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel?.isLoading ?? false)
             }
         }
         .refreshable {
@@ -113,9 +114,7 @@ struct ChannelsView: View {
         }
         .onDisappear {
             viewModel?.stopRealtimeListener()
-        }
-        .sheet(isPresented: $showProfile) {
-            ProfileView()
+            viewModel = nil  // Explicitly release ViewModel
         }
         .alert("Error", isPresented: .constant(viewModel?.error != nil)) {
             Button("OK") {
@@ -129,57 +128,6 @@ struct ChannelsView: View {
     }
 
     // MARK: - Subviews
-
-    /// Message Andrew button for fans (Story 5.6: AC 7 - Secondary location)
-    private var messageAndrewButton: some View {
-        Button {
-            Task {
-                await createDMWithCreator()
-            }
-        } label: {
-            HStack {
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white)
-
-                Text("Message Andrew")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white)
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 16)
-            .background(
-                LinearGradient(
-                    colors: [.blue, .blue.opacity(0.8)],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .cornerRadius(12)
-        }
-        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-        .listRowBackground(Color.clear)
-        .accessibilityLabel("Message Andrew")
-        .accessibilityHint("Start a direct message conversation with Andrew")
-    }
-
-    private var profileButton: some View {
-        Button {
-            showProfile = true
-        } label: {
-            Image(systemName: "person.crop.circle")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.blue)
-        }
-        .accessibilityLabel("Profile")
-        .accessibilityHint("View and edit your profile")
-    }
 
     private var emptyStateView: some View {
         ContentUnavailableView(
@@ -254,19 +202,6 @@ struct ChannelsView: View {
     private func setupViewModel() {
         if viewModel == nil {
             viewModel = ConversationViewModel(modelContext: modelContext)
-        }
-    }
-
-    /// Create DM with creator (Andrew) - Story 5.6: AC 7
-    private func createDMWithCreator() async {
-        guard let viewModel = viewModel else { return }
-        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
-
-        do {
-            let _ = try await viewModel.createDMWithCreator(currentUserID: currentUserID)
-        } catch {
-            print("❌ Failed to create DM with creator: \(error)")
-            // Error is already set in viewModel.error and will be displayed in UI
         }
     }
 

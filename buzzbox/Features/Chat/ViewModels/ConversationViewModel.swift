@@ -23,7 +23,7 @@ final class ConversationViewModel {
 
     private let modelContext: ModelContext
     private let conversationService: ConversationService
-    private var realtimeListenerHandle: DatabaseHandle?
+    nonisolated(unsafe) private var realtimeListenerHandle: DatabaseHandle?
 
     // MARK: - Initialization
 
@@ -73,6 +73,17 @@ final class ConversationViewModel {
         } catch let error as ConversationError {
             throw error
         } catch {
+            // Log the actual error for debugging
+            print("❌ [DM-CREATE] Unexpected error in createDMWithCreator:")
+            print("   Error type: \(type(of: error))")
+            print("   Error: \(error)")
+            print("   Localized description: \(error.localizedDescription)")
+            if let nsError = error as? NSError {
+                print("   Domain: \(nsError.domain)")
+                print("   Code: \(nsError.code)")
+                print("   User info: \(nsError.userInfo)")
+            }
+
             let convError = ConversationError.creationFailed
             self.error = convError
             throw convError
@@ -89,71 +100,95 @@ final class ConversationViewModel {
         withUserID userID: String,
         currentUserID: String
     ) async throws -> ConversationEntity {
+        print("🔵 [CONVERSATION] Creating conversation: current=\(currentUserID), recipient=\(userID)")
         isLoading = true
         defer { isLoading = false }
 
         // Step 1: Validate recipient exists
+        print("🔵 [CONVERSATION] Step 1: Fetching recipient user...")
         guard let recipient = try? await conversationService.getUser(userID: userID) else {
+            print("❌ [CONVERSATION] Recipient not found: \(userID)")
             let error = ConversationError.recipientNotFound
             self.error = error
             throw error
         }
+        print("✅ [CONVERSATION] Recipient found: \(recipient.email) (type: \(recipient.userType.rawValue))")
 
         // Step 2: Validate current user exists
+        print("🔵 [CONVERSATION] Step 2: Fetching current user...")
         guard let sender = try? await conversationService.getUser(userID: currentUserID) else {
+            print("❌ [CONVERSATION] Sender not found: \(currentUserID)")
             let error = ConversationError.recipientNotFound
             self.error = error
             throw error
         }
+        print("✅ [CONVERSATION] Sender found: \(sender.email) (type: \(sender.userType.rawValue))")
 
         // Step 3: Validate DM permissions (Story 5.4)
+        print("🔵 [CONVERSATION] Step 3: Validating DM permissions...")
         do {
             try conversationService.canCreateDM(from: sender, to: recipient)
+            print("✅ [CONVERSATION] DM permissions validated")
         } catch let dmError as DMValidationError {
+            print("❌ [CONVERSATION] DM validation failed: \(dmError.localizedDescription)")
             let error = ConversationError.dmRestricted(dmError.localizedDescription)
             self.error = error
             throw error
         }
 
         // Step 4: Check if user is blocked
+        print("🔵 [CONVERSATION] Step 4: Checking blocked status...")
         if try await conversationService.isBlocked(userID: userID, currentUserID: currentUserID) {
+            print("❌ [CONVERSATION] User is blocked")
             let error = ConversationError.userBlocked
             self.error = error
             throw error
         }
+        print("✅ [CONVERSATION] User not blocked")
 
-        // Step 3: Generate deterministic conversation ID
+        // Step 5: Generate deterministic conversation ID
         // Pattern: sorted participant IDs joined with underscore
         // Example: "user123_user456" (always same regardless of who initiates)
         let participants = [currentUserID, userID].sorted()
         let conversationID = participants.joined(separator: "_")
+        print("🔵 [CONVERSATION] Step 5: Generated conversation ID: \(conversationID)")
 
-        // Step 4: Check local SwiftData first (optimistic)
+        // Step 6: Check local SwiftData first (optimistic)
+        print("🔵 [CONVERSATION] Step 6: Checking local SwiftData...")
         let localDescriptor = FetchDescriptor<ConversationEntity>(
             predicate: #Predicate { $0.id == conversationID }
         )
 
         if let existing = try? modelContext.fetch(localDescriptor).first {
-            print("✅ Found existing conversation locally: \(conversationID)")
+            print("✅ [CONVERSATION] Found existing conversation locally: \(conversationID)")
             return existing
         }
+        print("🔵 [CONVERSATION] No existing conversation found locally")
 
-        // Step 5: Check RTDB for existing conversation (handles simultaneous creation)
-        if let remoteConversation = try await conversationService.findConversation(id: conversationID) {
-            // Sync remote conversation to local SwiftData
-            modelContext.insert(remoteConversation)
-            try modelContext.save()
+        // Step 7: Check RTDB for existing conversation (handles simultaneous creation)
+        print("🔵 [CONVERSATION] Step 7: Checking RTDB for existing conversation...")
+        do {
+            if let remoteConversation = try await conversationService.findConversation(id: conversationID) {
+                print("✅ [CONVERSATION] Found existing conversation in RTDB: \(conversationID)")
+                // Sync remote conversation to local SwiftData
+                modelContext.insert(remoteConversation)
+                try modelContext.save()
 
-            // Haptic feedback
-            #if os(iOS)
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            #endif
+                // Haptic feedback
+                #if os(iOS)
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                #endif
 
-            print("✅ Synced remote conversation to local: \(conversationID)")
-            return remoteConversation
+                print("✅ [CONVERSATION] Synced remote conversation to local: \(conversationID)")
+                return remoteConversation
+            }
+            print("🔵 [CONVERSATION] No existing conversation in RTDB")
+        } catch {
+            print("⚠️ [CONVERSATION] Error checking RTDB (will create new): \(error)")
         }
 
-        // Step 6: Create new conversation
+        // Step 8: Create new conversation
+        print("🔵 [CONVERSATION] Step 8: Creating new conversation entity...")
         let conversation = ConversationEntity(
             id: conversationID, // Deterministic!
             participantIDs: participants,
@@ -163,13 +198,19 @@ final class ConversationViewModel {
             syncStatus: .pending
         )
 
-        // Step 7: Save locally first (optimistic UI)
-        modelContext.insert(conversation)
-        try modelContext.save()
+        // Step 9: Save locally first (optimistic UI)
+        print("🔵 [CONVERSATION] Step 9: Saving conversation to SwiftData...")
+        do {
+            modelContext.insert(conversation)
+            try modelContext.save()
+            print("✅ [CONVERSATION] Created new conversation locally: \(conversationID)")
+        } catch {
+            print("❌ [CONVERSATION] Failed to save conversation to SwiftData: \(error)")
+            throw error
+        }
 
-        print("✅ Created new conversation locally: \(conversationID)")
-
-        // Step 8: Sync to RTDB in background
+        // Step 10: Sync to RTDB in background
+        print("🔵 [CONVERSATION] Step 10: Starting background RTDB sync...")
         Task { @MainActor in
             do {
                 try await conversationService.syncConversation(conversation)
@@ -181,12 +222,14 @@ final class ConversationViewModel {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 #endif
 
-                print("✅ Conversation synced to RTDB: \(conversationID)")
+                print("✅ [CONVERSATION] Conversation synced to RTDB: \(conversationID)")
             } catch {
+                print("❌ [CONVERSATION] Failed to sync conversation to RTDB:")
+                print("   Error: \(error)")
+                print("   Localized: \(error.localizedDescription)")
                 conversation.syncStatus = .failed
                 self.error = .creationFailed
                 try? modelContext.save()
-                print("❌ Failed to sync conversation to RTDB: \(error)")
             }
         }
 
@@ -203,12 +246,14 @@ final class ConversationViewModel {
             return
         }
 
+        print("🎧 [LISTENER] Starting RTDB listener for user: \(currentUserID)")
+
         let conversationsRef = Database.database().reference().child("conversations")
 
         realtimeListenerHandle = conversationsRef.observe(.value) { [weak self] snapshot in
-            guard let self = self else { return }
-
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                print("📡 [LISTENER] Received snapshot with \(snapshot.childrenCount) conversations")
                 await self.processConversationSnapshot(snapshot, currentUserID: currentUserID)
             }
         }
@@ -217,13 +262,11 @@ final class ConversationViewModel {
     }
 
     /// Stops the real-time RTDB listener
-    nonisolated func stopRealtimeListener() {
-        Task { @MainActor in
-            if let handle = realtimeListenerHandle {
-                Database.database().reference().child("conversations").removeObserver(withHandle: handle)
-                realtimeListenerHandle = nil
-                print("🛑 Stopped real-time RTDB listener")
-            }
+    func stopRealtimeListener() {
+        if let handle = realtimeListenerHandle {
+            Database.database().reference().child("conversations").removeObserver(withHandle: handle)
+            realtimeListenerHandle = nil
+            print("🛑 Stopped real-time RTDB listener")
         }
     }
 
@@ -248,14 +291,44 @@ final class ConversationViewModel {
 
     /// Processes conversation snapshot from RTDB
     private func processConversationSnapshot(_ snapshot: DataSnapshot, currentUserID: String) async {
-        for child in snapshot.children.allObjects as? [DataSnapshot] ?? [] {
-            guard let conversationData = child.value as? [String: Any] else { continue }
+        print("🔄 [SYNC] Processing conversations for user: \(currentUserID)")
+        var processedCount = 0
+        var skippedCount = 0
 
-            // Check if current user is participant
-            let participantIDs = conversationData["participantIDs"] as? [String] ?? []
-            guard participantIDs.contains(currentUserID) else { continue }
+        for child in snapshot.children.allObjects as? [DataSnapshot] ?? [] {
+            guard let conversationData = child.value as? [String: Any] else {
+                print("⚠️ [SYNC] Skipping conversation \(child.key): invalid data format")
+                continue
+            }
 
             let conversationID = child.key
+            let isGroup = conversationData["isGroup"] as? Bool ?? false
+            let groupName = conversationData["groupName"] as? String ?? "Unknown"
+
+            // Parse participantIDs from RTDB object format {uid: true} to array [uid]
+            let participantIDsDict = conversationData["participantIDs"] as? [String: Any] ?? [:]
+            let participantIDs = Array(participantIDsDict.keys)
+
+            print("📋 [SYNC] Conversation: \(conversationID) | isGroup: \(isGroup) | name: \(groupName) | participants: \(participantIDs.count)")
+
+            guard participantIDs.contains(currentUserID) else {
+                print("⏭️  [SYNC] Skipping \(conversationID): user not in participantIDs (\(participantIDs.count) participants)")
+                skippedCount += 1
+                continue
+            }
+
+            // Parse adminUserIDs from RTDB object format
+            let adminUserIDsDict = conversationData["adminUserIDs"] as? [String: Any] ?? [:]
+            let adminUserIDs = Array(adminUserIDsDict.keys)
+
+            // Parse group fields (already declared above for logging)
+            let groupPhotoURL = conversationData["groupPhotoURL"] as? String
+            let isCreatorOnly = conversationData["isCreatorOnly"] as? Bool ?? false
+
+            // Parse timestamps (RTDB stores in milliseconds)
+            let createdAtMillis = conversationData["createdAt"] as? Double ?? 0
+            let updatedAtMillis = conversationData["updatedAt"] as? Double ?? 0
+            let lastMessageMillis = conversationData["lastMessageTimestamp"] as? Double ?? 0
 
             // Check if exists locally
             let descriptor = FetchDescriptor<ConversationEntity>(
@@ -269,47 +342,55 @@ final class ConversationViewModel {
                 let conversation = ConversationEntity(
                     id: conversationID,
                     participantIDs: participantIDs,
-                    displayName: nil,
-                    isGroup: false,
-                    createdAt: Date(
-                        timeIntervalSince1970: conversationData["createdAt"] as? TimeInterval ?? 0
-                    ),
+                    displayName: groupName,
+                    groupPhotoURL: groupPhotoURL,
+                    adminUserIDs: adminUserIDs,
+                    isGroup: isGroup,
+                    isCreatorOnly: isCreatorOnly,
+                    createdAt: Date(timeIntervalSince1970: createdAtMillis / 1000),
                     syncStatus: .synced
                 )
 
                 // Update last message fields
                 conversation.lastMessageText = conversationData["lastMessage"] as? String
-                conversation.lastMessageAt = Date(
-                    timeIntervalSince1970: conversationData["lastMessageTimestamp"] as? TimeInterval ?? 0
-                )
+                conversation.lastMessageAt = Date(timeIntervalSince1970: lastMessageMillis / 1000)
                 conversation.unreadCount = conversationData["unreadCount"] as? Int ?? 0
-                conversation.updatedAt = Date(
-                    timeIntervalSince1970: conversationData["updatedAt"] as? TimeInterval ?? 0
-                )
+                conversation.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
 
                 modelContext.insert(conversation)
-                print("➕ New conversation from RTDB: \(conversationID)")
+                print("➕ [SYNC] New conversation: \(conversationID) | isGroup: \(isGroup) | name: \(groupName)")
+                processedCount += 1
             } else if let existing = existing {
                 // Update existing conversation
+                existing.participantIDs = participantIDs
+                existing.adminUserIDs = adminUserIDs
+                existing.displayName = groupName
+                existing.groupPhotoURL = groupPhotoURL
+                existing.isGroup = isGroup
+                existing.isCreatorOnly = isCreatorOnly
                 existing.lastMessageText = conversationData["lastMessage"] as? String
-                existing.lastMessageAt = Date(
-                    timeIntervalSince1970: conversationData["lastMessageTimestamp"] as? TimeInterval ?? 0
-                )
+                existing.lastMessageAt = Date(timeIntervalSince1970: lastMessageMillis / 1000)
                 existing.unreadCount = conversationData["unreadCount"] as? Int ?? 0
-                existing.updatedAt = Date(
-                    timeIntervalSince1970: conversationData["updatedAt"] as? TimeInterval ?? 0
-                )
-                print("🔄 Updated conversation: \(conversationID)")
+                existing.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
+                print("🔄 [SYNC] Updated conversation: \(conversationID) | isGroup: \(isGroup)")
+                processedCount += 1
             }
 
             try? modelContext.save()
         }
+
+        print("✅ [SYNC] Complete: \(processedCount) conversations synced, \(skippedCount) skipped")
     }
 
     // MARK: - Cleanup
 
     deinit {
-        stopRealtimeListener()
+        // Clean up listener in nonisolated context
+        // Database reference calls are safe to make from any thread
+        if let handle = realtimeListenerHandle {
+            Database.database().reference().child("conversations").removeObserver(withHandle: handle)
+            print("🛑 Stopped real-time RTDB listener (deinit)")
+        }
     }
 }
 

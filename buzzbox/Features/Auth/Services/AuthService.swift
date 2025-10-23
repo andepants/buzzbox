@@ -169,7 +169,42 @@ final class AuthService: ObservableObject {
                 print("⚠️ [AUTH] Failed to auto-join channels (non-critical): \(error.localizedDescription)")
             }
 
-            // 11. Create and return User struct
+            // 11. Auto-create DM with creator (Andrew) for fans only
+            if userType == .fan {
+                print("🔵 [AUTH] Auto-creating DM with creator for new fan...")
+                do {
+                    // Create the conversation
+                    let conversationID = try await ConversationService.shared.autoCreateDMWithCreator(
+                        fanUserID: uid,
+                        creatorEmail: CREATOR_EMAIL
+                    )
+
+                    // Find creator's UID to send welcome message
+                    let creatorSnapshot = try await firestore
+                        .collection("users")
+                        .whereField("email", isEqualTo: CREATOR_EMAIL)
+                        .limit(to: 1)
+                        .getDocuments()
+
+                    if let creatorDoc = creatorSnapshot.documents.first {
+                        let creatorID = creatorDoc.documentID
+
+                        // Send welcome message from Andrew
+                        let welcomeMessage = "Thanks for checking out my app! Please share any advice you have :)"
+                        try await ConversationService.shared.sendWelcomeMessage(
+                            text: welcomeMessage,
+                            conversationID: conversationID,
+                            senderID: creatorID
+                        )
+                        print("✅ [AUTH] DM created and welcome message sent to conversation \(conversationID)")
+                    }
+                } catch {
+                    // Log but don't fail signup - DM creation is non-critical
+                    print("⚠️ [AUTH] Failed to auto-create DM with creator (non-critical): \(error.localizedDescription)")
+                }
+            }
+
+            // 12. Create and return User struct
             let user = User(
                 id: uid,
                 email: email,
@@ -620,17 +655,17 @@ final class AuthService: ObservableObject {
     // MARK: - Sign Out
 
     /// Signs out user and cleans up local data
-    /// - Throws: AuthError if sign out fails
+    /// - Note: Non-throwing to ensure cleanup always completes
     func signOut() async throws {
         print("🔵 [AUTH] Starting sign-out...")
 
-        // 1. Set user offline in Realtime Database (Firebase best practice)
-        await UserPresenceService.shared.setOffline()
-        print("✅ [AUTH] User presence set to offline")
-
-        // 2. Remove all Firebase listeners
+        // 1. Remove all Firebase listeners FIRST (prevents post-logout observer fires)
         await UserPresenceService.shared.removeAllListeners()
         print("✅ [AUTH] Firebase listeners removed")
+
+        // 2. Set user offline in Realtime Database (non-blocking, with timeout)
+        await UserPresenceService.shared.setOffline()
+        print("✅ [AUTH] User presence set to offline")
 
         // 3. Sign out from Firebase Auth
         do {
@@ -638,7 +673,7 @@ final class AuthService: ObservableObject {
             print("✅ [AUTH] Firebase Auth sign-out successful")
         } catch {
             print("🔴 [AUTH] Firebase sign-out failed: \(error)")
-            throw mapFirebaseError(error as NSError)
+            // Don't throw - continue cleanup
         }
 
         // 4. Delete auth token from Keychain
@@ -652,11 +687,13 @@ final class AuthService: ObservableObject {
         }
 
         // 5. Clear Kingfisher image cache
-        KingfisherManager.shared.cache.clearMemoryCache()
-        KingfisherManager.shared.cache.clearDiskCache()
+        await Task.detached(priority: .background) {
+            KingfisherManager.shared.cache.clearMemoryCache()
+            KingfisherManager.shared.cache.clearDiskCache()
+        }.value
         print("✅ [AUTH] Kingfisher cache cleared")
 
-        // 6. Update published state
+        // 6. Update published state (always succeeds)
         self.currentUser = nil
         self.isAuthenticated = false
 

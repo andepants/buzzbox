@@ -1,0 +1,118 @@
+/**
+ * Import Creator Profile Script
+ *
+ * Imports creator profile from creator-profile-preseed.json into Firestore.
+ * Run with: npm run import-creator-profile
+ */
+
+import * as fs from "fs";
+import * as path from "path";
+import {execSync} from "child_process";
+
+interface CreatorProfile {
+  id: string;
+  personality: string;
+  tone: string;
+  examples: string[];
+  avoid: string[];
+  signature: string;
+}
+
+const PROJECT_ID = "buzzbox-ios";
+const FIRESTORE_API = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+async function getAccessToken(): Promise<string> {
+  try {
+    const token = execSync("gcloud auth print-access-token", {
+      encoding: "utf-8",
+    }).trim();
+    return token;
+  } catch (error) {
+    console.error("❌ Error getting access token. Make sure you're logged in:");
+    console.error("   Run: firebase login");
+    throw error;
+  }
+}
+
+async function createDocument(
+  collectionId: string,
+  documentId: string,
+  data: Record<string, unknown>,
+  accessToken: string
+): Promise<void> {
+  const url = `${FIRESTORE_API}/${collectionId}?documentId=${documentId}`;
+
+  // Convert data to Firestore format
+  const firestoreDoc = {
+    fields: {
+      personality: {stringValue: data.personality},
+      tone: {stringValue: data.tone},
+      examples: {
+        arrayValue: {
+          values: data.examples.map((ex: string) => ({stringValue: ex})),
+        },
+      },
+      avoid: {
+        arrayValue: {
+          values: data.avoid.map((av: string) => ({stringValue: av})),
+        },
+      },
+      signature: {stringValue: data.signature},
+    },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(firestoreDoc),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create document ${documentId}: ${error}`);
+  }
+}
+
+async function importCreatorProfile() {
+  try {
+    console.log("🚀 Starting creator profile import...\n");
+
+    // Get access token
+    console.log("🔐 Getting Firebase access token...");
+    const accessToken = await getAccessToken();
+    console.log("✅ Authenticated\n");
+
+    // Read the creator profile data file
+    const dataPath = path.join(__dirname, "../../../docs/data/creator-profile-preseed.json");
+    console.log(`📁 Reading profile from: ${dataPath}`);
+
+    const rawData = fs.readFileSync(dataPath, "utf-8");
+    const profile: CreatorProfile = JSON.parse(rawData);
+
+    console.log(`👤 Creating profile for: ${profile.id}\n`);
+
+    // Import the creator profile
+    await createDocument("creator_profiles", profile.id, profile, accessToken);
+    console.log(`✅ Created: creator_profiles/${profile.id}`);
+
+    console.log("\n🎉 Success! Creator profile imported to Firestore");
+    console.log("\n📍 Collection: creator_profiles");
+    console.log(`📍 Document: ${profile.id}`);
+    console.log(`📍 Personality: ${profile.personality}`);
+    console.log(`📍 Tone: ${profile.tone}`);
+    console.log(`📍 Examples: ${profile.examples.length} message examples`);
+    console.log(`📍 Avoid: ${profile.avoid.length} items to avoid`);
+    console.log("\n💡 Next: This profile will be used by Story 6.4 for AI smart replies\n");
+
+    process.exit(0);
+  } catch (error) {
+    console.error("\n❌ Error importing creator profile:", error);
+    process.exit(1);
+  }
+}
+
+// Run the import
+importCreatorProfile();

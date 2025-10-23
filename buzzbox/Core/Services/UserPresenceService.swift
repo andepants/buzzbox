@@ -36,7 +36,10 @@ final class UserPresenceService {
     static let shared = UserPresenceService()
 
     nonisolated(unsafe) private let database = Database.database().reference()
-    private var presenceListeners: [String: DatabaseHandle] = [:]
+    nonisolated(unsafe) private var presenceListeners: [String: DatabaseHandle] = [:]
+
+    // Store NotificationCenter observers for cleanup
+    nonisolated(unsafe) private var lifecycleObservers: [NSObjectProtocol] = []
 
     // MARK: - Initialization
 
@@ -68,32 +71,62 @@ final class UserPresenceService {
     }
 
     /// Set user as offline and cancel disconnect operations
+    /// - Note: Has timeout protection to prevent blocking during logout
     func setOffline() async {
-        guard let userID = Auth.auth().currentUser?.uid else { return }
+        guard let userID = Auth.auth().currentUser?.uid else {
+            print("⚠️ [PRESENCE] setOffline skipped - no authenticated user")
+            return
+        }
 
         let presenceRef = database.child("userPresence/\(userID)")
 
-        do {
-            // Cancel pending onDisconnect operations
-            try await presenceRef.child("online").cancelDisconnectOperations()
-            try await presenceRef.child("lastSeen").cancelDisconnectOperations()
+        // Use a timeout to prevent indefinite blocking
+        let timeoutTask = Task {
+            try await Task.sleep(for: .seconds(3))
+        }
+
+        let offlineTask = Task {
+            // Cancel pending onDisconnect operations (may fail if already disconnected)
+            try? await presenceRef.child("online").cancelDisconnectOperations()
+            try? await presenceRef.child("lastSeen").cancelDisconnectOperations()
 
             // Set offline status
             try await presenceRef.child("online").setValue(false)
             try await presenceRef.child("lastSeen").setValue(ServerValue.timestamp())
+        }
 
+        // Wait for either task to complete (with timeout)
+        do {
+            _ = try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    try await offlineTask.value
+                }
+                group.addTask {
+                    try await timeoutTask.value
+                    throw TimeoutError()
+                }
+
+                // Return on first completion
+                try await group.next()
+                group.cancelAll()
+            }
             print("✅ User presence: OFFLINE")
+        } catch is TimeoutError {
+            print("⚠️ [PRESENCE] setOffline timed out (non-critical)")
         } catch {
-            print("❌ Failed to set offline presence: \(error.localizedDescription)")
+            print("⚠️ [PRESENCE] Failed to set offline presence (non-critical): \(error.localizedDescription)")
         }
     }
+
+    /// Timeout error
+    private struct TimeoutError: Error {}
 
     // MARK: - App Lifecycle
 
     /// Setup observers for app lifecycle events
     private func setupAppLifecycleObservers() {
         // App enters foreground
-        NotificationCenter.default.addObserver(
+        let foregroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willEnterForegroundNotification,
             object: nil,
             queue: .main
@@ -102,9 +135,10 @@ final class UserPresenceService {
                 await self?.setOnline()
             }
         }
+        lifecycleObservers.append(foregroundObserver)
 
         // App enters background
-        NotificationCenter.default.addObserver(
+        let backgroundObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification,
             object: nil,
             queue: .main
@@ -113,9 +147,10 @@ final class UserPresenceService {
                 await self?.setOffline()
             }
         }
+        lifecycleObservers.append(backgroundObserver)
 
         // App will terminate
-        NotificationCenter.default.addObserver(
+        let terminateObserver = NotificationCenter.default.addObserver(
             forName: UIApplication.willTerminateNotification,
             object: nil,
             queue: .main
@@ -124,6 +159,7 @@ final class UserPresenceService {
                 await self?.setOffline()
             }
         }
+        lifecycleObservers.append(terminateObserver)
     }
 
     // MARK: - Listen to Presence
@@ -172,19 +208,33 @@ final class UserPresenceService {
     func removeAllListeners() async {
         print("🔵 [PRESENCE] Removing all active listeners...")
 
+        // Remove Firebase RTDB listeners
         for (userID, handle) in presenceListeners {
             database.child("userPresence/\(userID)").removeObserver(withHandle: handle)
-            print("   ✓ Removed listener for user: \(userID)")
+            print("   ✓ Removed RTDB listener for user: \(userID)")
         }
-
         presenceListeners.removeAll()
-        print("✅ [PRESENCE] All listeners removed (\(presenceListeners.count) listeners cleared)")
+
+        // Remove NotificationCenter observers
+        let observerCount = lifecycleObservers.count
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        lifecycleObservers.removeAll()
+        print("   ✓ Removed \(observerCount) NotificationCenter observers")
+
+        print("✅ [PRESENCE] All listeners removed")
     }
 
     deinit {
-        // Cleanup all listeners
+        // Cleanup all Firebase RTDB listeners
         for (userID, handle) in presenceListeners {
             database.child("userPresence/\(userID)").removeObserver(withHandle: handle)
+        }
+
+        // Cleanup all NotificationCenter observers
+        for observer in lifecycleObservers {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 }

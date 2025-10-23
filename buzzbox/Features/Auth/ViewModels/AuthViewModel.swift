@@ -353,8 +353,37 @@ final class AuthViewModel: ObservableObject {
     /// Logs out current user and clears ALL data
     /// - Parameter modelContext: SwiftData ModelContext for clearing local data
     func logout(modelContext: ModelContext) async {
-        print("🔵 [AUTH-VM] Starting logout with data cleanup...")
+        print("🔵 [AUTH-VM] Starting logout...")
 
+        // OPTIMISTIC UI: Reset auth state IMMEDIATELY for instant UI redirect
+        // This ensures user sees LoginView instantly (no waiting for cleanup)
+        isAuthenticated = false
+        currentUser = nil
+        email = ""
+        password = ""
+        confirmPassword = ""
+        displayName = ""
+        errorMessage = nil
+        showError = false
+        resetEmailSent = false
+        displayNameAvailability = .unknown
+        loginAttemptCount = 0
+
+        // Reset tab selection to Channels (tab 0)
+        UserDefaults.standard.set(0, forKey: "selectedTab")
+
+        print("✅ [AUTH-VM] Auth state reset - user redirected to LoginView")
+
+        // Haptic feedback (immediate, before cleanup)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        // VoiceOver announcement (immediate)
+        UIAccessibility.post(
+            notification: .screenChanged,
+            argument: "You have been logged out"
+        )
+
+        // Background cleanup (user already sees logged out state)
         do {
             // 1. Clear all SwiftData entities
             await clearAllLocalData(modelContext: modelContext)
@@ -362,33 +391,10 @@ final class AuthViewModel: ObservableObject {
             // 2. Call AuthService.signOut() for Firebase/Keychain cleanup
             try await authService.signOut()
 
-            // 3. Reset all published properties
-            isAuthenticated = false
-            currentUser = nil
-            email = ""
-            password = ""
-            confirmPassword = ""
-            displayName = ""
-            errorMessage = nil
-            showError = false
-            resetEmailSent = false
-            displayNameAvailability = .unknown
-            loginAttemptCount = 0
-
-            print("✅ [AUTH-VM] Logout completed successfully")
-
-            // Haptic feedback
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-
-            // VoiceOver announcement
-            UIAccessibility.post(
-                notification: .screenChanged,
-                argument: "You have been logged out"
-            )
+            print("✅ [AUTH-VM] Logout cleanup completed successfully")
         } catch {
-            print("🔴 [AUTH-VM] Logout error: \(error)")
-            errorMessage = "Logout encountered an issue, but local data was cleared"
-            showError = true
+            print("🔴 [AUTH-VM] Logout cleanup error: \(error)")
+            // Non-critical: user already logged out visually
         }
     }
 
