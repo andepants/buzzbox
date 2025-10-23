@@ -175,6 +175,126 @@ iOS App → Firebase RTDB → Cloud Functions → OpenAI GPT-4 → RTDB → iOS 
 
 ## 📝 User Stories
 
+### Story 6.0: Environment Configuration (15 min)
+
+**As a developer, I want to configure environment variables and constants so Cloud Functions can access OpenAI and identify the creator.**
+
+**Acceptance Criteria:**
+- [ ] Creator UID constant defined
+- [ ] OpenAI API key configured via environment variable
+- [ ] `.env` file created for local development
+- [ ] `.env.example` file created for documentation
+- [ ] Environment variables accessible in Cloud Functions
+- [ ] Production deployment configured with Firebase secrets
+
+**Technical Details:**
+
+**Step 1: Create `.env` file for local development**
+
+Create `functions/.env`:
+```bash
+# OpenAI API Key (get from https://platform.openai.com/api-keys)
+OPENAI_API_KEY=sk-proj-your-key-here
+
+# Firebase Project ID
+FIREBASE_PROJECT_ID=your-project-id
+```
+
+**Step 2: Create `.env.example` for documentation**
+
+Create `functions/.env.example`:
+```bash
+# OpenAI API Key - Get from https://platform.openai.com/api-keys
+OPENAI_API_KEY=sk-proj-...
+
+# Firebase Project ID - Find in Firebase Console > Project Settings
+FIREBASE_PROJECT_ID=your-project-id
+```
+
+**Step 3: Add to `.gitignore`**
+
+Ensure `functions/.gitignore` includes:
+```
+.env
+.env.local
+```
+
+**Step 4: Configure production secrets (before deployment)**
+
+```bash
+# Set OpenAI API key for production
+firebase functions:secrets:set OPENAI_API_KEY
+
+# You'll be prompted to enter the key securely
+# Paste: sk-proj-your-actual-key-here
+```
+
+**Step 5: Update `functions/package.json` for local .env support**
+
+```json
+{
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "shell": "firebase functions:shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "openai": "^4.0.0",
+    "@google-cloud/firestore": "^7.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0"
+  }
+}
+```
+
+**Step 6: Define Creator UID constant**
+
+In each Cloud Function file, add:
+```typescript
+// Andrew's Firebase Auth UID (from Firebase Console > Authentication)
+const CREATOR_UID = 'UoLk9GtxDaaYGlI8Ah6RnCbXXbf2';
+```
+
+**Local Development Testing:**
+
+```bash
+# Load environment variables and start emulator
+cd functions
+firebase emulators:start --only functions
+
+# Test that env vars are loaded
+# Check logs for successful OpenAI initialization
+```
+
+**Production Deployment:**
+
+```bash
+# Deploy with secrets
+firebase deploy --only functions
+
+# Secrets are automatically available via process.env.OPENAI_API_KEY
+```
+
+**Important Notes:**
+- Never commit `.env` to git
+- Use `firebase functions:secrets:set` for production
+- Local `.env` file only works with Firebase Emulator
+- Production uses Firebase Secrets (not `.env`)
+
+**Estimate:** 15 min
+
+---
+
 ### Story 6.1: Firebase Cloud Functions Setup (45 min)
 
 **As a developer, I want to set up Firebase Cloud Functions so I can deploy AI workflows.**
@@ -248,12 +368,13 @@ curl http://localhost:5001/[PROJECT-ID]/us-central1/helloWorld
 **Create: `functions/src/ai-processing.ts`**
 
 ```typescript
-import * as functions from 'firebase-functions';
+import { onValueWritten } from 'firebase-functions/v2/database';
+import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: functions.config().openai.key,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 interface Message {
@@ -268,9 +389,12 @@ interface Message {
  * Auto-triggered on new messages to process with AI
  * Features: Categorization (1), Sentiment (4), Opportunity Scoring (5)
  */
-export const processMessageAI = functions.database
-  .ref('/messages/{conversationId}/{messageId}')
-  .onWrite(async (change, context) => {
+export const processMessageAI = onValueWritten({
+  ref: '/messages/{conversationId}/{messageId}',
+  region: 'us-central1',
+}, async (event) => {
+    const change = event.data;
+
     // Only process new messages (not updates)
     if (!change.after.exists()) {
       return null; // Message deleted
@@ -279,8 +403,8 @@ export const processMessageAI = functions.database
     const message = change.after.val() as Message;
 
     // Only process messages sent to the creator (Andrew)
-    const CREATOR_ID = 'andrew_creator_id'; // From Firebase Auth
-    if (message.receiverId !== CREATOR_ID) {
+    const CREATOR_UID = 'UoLk9GtxDaaYGlI8Ah6RnCbXXbf2'; // Andrew's Firebase Auth UID
+    if (message.receiverId !== CREATOR_UID) {
       return null;
     }
 
@@ -305,7 +429,8 @@ export const processMessageAI = functions.database
         aiProcessedAt: admin.database.ServerValue.TIMESTAMP,
       });
 
-      functions.logger.info(`Processed message ${message.id}:`, {
+      logger.info('Processed message', {
+        messageId: message.id,
         category,
         sentiment,
         score,
@@ -313,7 +438,7 @@ export const processMessageAI = functions.database
 
       return { success: true };
     } catch (error) {
-      functions.logger.error('AI processing failed:', error);
+      logger.error('AI processing failed', { error });
       // Don't throw - message should still work without AI metadata
       return { success: false, error };
     }
@@ -499,17 +624,64 @@ Create 10-15 FAQs in Firestore manually via Firebase Console:
     "faq_001": {
       "question": "What time do you stream?",
       "answer": "I stream Monday-Friday at 7pm EST on YouTube! See you there 🎮",
-      "embedding": null,  // Will be generated by Cloud Function
-      "category": "schedule"
+      "category": "schedule",
+      "keywords": ["stream", "streaming", "time", "when", "schedule"],
+      "embedding": null  // Will be generated by Cloud Function
     },
     "faq_002": {
       "question": "How can I support you?",
       "answer": "Thanks for asking! You can support through YouTube memberships, Patreon, or just sharing my content. Every bit helps! 🙏",
-      "embedding": null,
-      "category": "support"
+      "category": "support",
+      "keywords": ["support", "patreon", "membership", "donate"],
+      "embedding": null
     }
   }
 }
+```
+
+**Firestore Vector Index Setup (REQUIRED):**
+
+Before FAQ search will work, you must create a vector index:
+
+**Option 1: Firebase Console (Manual)**
+1. Go to Firebase Console > Firestore > Indexes
+2. Click "Create Index"
+3. Collection: `faqs`
+4. Field: `embedding`
+5. Type: **Vector** (not regular index!)
+6. Dimensions: **1536** (for text-embedding-3-small)
+7. Distance Measure: **COSINE**
+
+**Option 2: Firebase CLI (Recommended)**
+
+Create `firestore.indexes.json`:
+```json
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "faqs",
+      "fieldPath": "embedding",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        }
+      ],
+      "vectorConfig": {
+        "dimension": 1536,
+        "flat": {}
+      }
+    }
+  ]
+}
+```
+
+Deploy the index:
+```bash
+firebase deploy --only firestore:indexes
+# Wait 5-10 minutes for index to build
+# Check status: Firebase Console > Firestore > Indexes
 ```
 
 **Cloud Function Design:**
@@ -517,40 +689,43 @@ Create 10-15 FAQs in Firestore manually via Firebase Console:
 **Create: `functions/src/faq.ts`**
 
 ```typescript
-import * as functions from 'firebase-functions';
+import * as functions from 'firebase-functions/v2';
 import * as admin from 'firebase-admin';
+import { FieldValue } from '@google-cloud/firestore';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: functions.config().openai.key,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 interface FAQ {
   question: string;
   answer: string;
-  embedding: number[];
   category: string;
+  keywords: string[];
+  embedding: number[];
 }
 
 interface FAQResponse {
   isFAQ: boolean;
   answer?: string;
   confidence?: number;
+  matchedQuestion?: string;
 }
 
 /**
- * Check if message matches FAQ and return answer
+ * Check if message matches FAQ using Firestore native vector search
  * Feature 3: FAQ Auto-Responder
  */
-export const checkFAQ = functions.https.onCall(async (data, context) => {
-  const { text } = data;
+export const checkFAQ = functions.https.onCall(async (request) => {
+  const { text } = request.data;
 
   if (!text || typeof text !== 'string') {
     throw new functions.https.HttpsError('invalid-argument', 'Text is required');
   }
 
   try {
-    // Generate embedding for user's message
+    // 1. Generate embedding for user's message
     const embeddingResponse = await openai.embeddings.create({
       model: 'text-embedding-3-small',
       input: text,
@@ -558,40 +733,48 @@ export const checkFAQ = functions.https.onCall(async (data, context) => {
 
     const messageEmbedding = embeddingResponse.data[0].embedding;
 
-    // Fetch all FAQs from Firestore
-    const faqsSnapshot = await admin.firestore()
+    // 2. Use Firestore native vector search
+    const vectorQuery = admin.firestore()
       .collection('faqs')
-      .get();
+      .findNearest({
+        vectorField: 'embedding',
+        queryVector: FieldValue.vector(messageEmbedding),
+        limit: 5,
+        distanceMeasure: 'COSINE',
+        distanceResultField: 'distance'
+      });
 
-    // Find best match using cosine similarity
-    let bestMatch: { faq: FAQ; similarity: number } | null = null;
+    const results = await vectorQuery.get();
 
-    faqsSnapshot.forEach((doc) => {
-      const faq = doc.data() as FAQ;
+    if (results.empty) {
+      return { isFAQ: false } as FAQResponse;
+    }
 
-      if (!faq.embedding || faq.embedding.length === 0) {
-        return; // Skip FAQs without embeddings
-      }
+    // 3. Get best match
+    const bestMatch = results.docs[0];
+    const faqData = bestMatch.data() as FAQ;
+    const distance = (bestMatch as any).distance; // Cosine distance (0 = identical, 2 = opposite)
 
-      const similarity = cosineSimilarity(messageEmbedding, faq.embedding);
+    // Convert distance to similarity (0-1 range)
+    const similarity = 1 - (distance / 2);
 
-      if (!bestMatch || similarity > bestMatch.similarity) {
-        bestMatch = { faq, similarity };
-      }
+    functions.logger.info('FAQ match found', {
+      question: faqData.question,
+      similarity,
+      distance
     });
 
-    // Return FAQ if confidence > 80%
-    if (bestMatch && bestMatch.similarity > 0.80) {
+    // 4. Return if confidence > 80%
+    if (similarity > 0.80) {
       return {
         isFAQ: true,
-        answer: bestMatch.faq.answer,
-        confidence: bestMatch.similarity,
+        answer: faqData.answer,
+        confidence: similarity,
+        matchedQuestion: faqData.question
       } as FAQResponse;
     }
 
-    return {
-      isFAQ: false,
-    } as FAQResponse;
+    return { isFAQ: false } as FAQResponse;
 
   } catch (error) {
     functions.logger.error('FAQ check failed:', error);
@@ -600,7 +783,8 @@ export const checkFAQ = functions.https.onCall(async (data, context) => {
 });
 
 /**
- * Generate embeddings for all FAQs (one-time setup function)
+ * Generate embeddings for all FAQs using OpenAI
+ * Run this once after creating FAQs manually
  */
 export const generateFAQEmbeddings = functions.https.onRequest(async (req, res) => {
   try {
@@ -613,7 +797,12 @@ export const generateFAQEmbeddings = functions.https.onRequest(async (req, res) 
     for (const doc of faqsSnapshot.docs) {
       const faq = doc.data() as FAQ;
 
-      // Generate embedding
+      // Skip if already has embedding
+      if (faq.embedding && faq.embedding.length > 0) {
+        continue;
+      }
+
+      // Generate embedding from question
       const embeddingResponse = await openai.embeddings.create({
         model: 'text-embedding-3-small',
         input: faq.question,
@@ -621,48 +810,32 @@ export const generateFAQEmbeddings = functions.https.onRequest(async (req, res) 
 
       const embedding = embeddingResponse.data[0].embedding;
 
-      // Update Firestore
+      // Update Firestore with FieldValue.vector()
       updates.push(
-        doc.ref.update({ embedding })
+        doc.ref.update({
+          embedding: FieldValue.vector(embedding)
+        })
       );
+
+      functions.logger.info('Generated embedding for FAQ', {
+        id: doc.id,
+        question: faq.question
+      });
     }
 
     await Promise.all(updates);
 
-    res.json({ success: true, count: faqsSnapshot.size });
+    res.json({
+      success: true,
+      count: updates.length,
+      message: 'FAQ embeddings generated successfully'
+    });
+
   } catch (error) {
     functions.logger.error('Embedding generation failed:', error);
     res.status(500).json({ error: 'Embedding generation failed' });
   }
 });
-
-/**
- * Calculate cosine similarity between two vectors
- */
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must have same length');
-  }
-
-  let dotProduct = 0;
-  let magnitudeA = 0;
-  let magnitudeB = 0;
-
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    magnitudeA += a[i] * a[i];
-    magnitudeB += b[i] * b[i];
-  }
-
-  magnitudeA = Math.sqrt(magnitudeA);
-  magnitudeB = Math.sqrt(magnitudeB);
-
-  if (magnitudeA === 0 || magnitudeB === 0) {
-    return 0;
-  }
-
-  return dotProduct / (magnitudeA * magnitudeB);
-}
 ```
 
 **Update: `functions/src/index.ts`**
@@ -690,6 +863,7 @@ final class AIService: ObservableObject {
         let isFAQ: Bool
         let answer: String?
         let confidence: Double?
+        let matchedQuestion: String?
     }
 
     func checkFAQ(_ text: String) async throws -> FAQResponse {
@@ -716,6 +890,10 @@ func receiveMessage(_ message: MessageEntity) async {
             if faqResponse.isFAQ, let answer = faqResponse.answer {
                 // 3. Auto-send FAQ response
                 await sendMessage(answer, isAIGenerated: true)
+
+                // Log for analytics
+                print("📚 FAQ matched: \(faqResponse.matchedQuestion ?? "")")
+                print("✨ Confidence: \(faqResponse.confidence ?? 0)")
             }
         } catch {
             // Silent fail - don't block on FAQ check
@@ -726,10 +904,14 @@ func receiveMessage(_ message: MessageEntity) async {
 ```
 
 **Acceptance Criteria:**
-- [ ] 10-15 FAQs created in Firestore manually
+- [ ] Firestore vector index created for `faqs.embedding` field (1536 dimensions, COSINE)
+- [ ] Index status shows "Enabled" in Firebase Console
+- [ ] 10-15 FAQs created in Firestore manually with keywords
 - [ ] `generateFAQEmbeddings` function generates embeddings successfully
-- [ ] `checkFAQ` function does vector search correctly
+- [ ] FAQs stored with FieldValue.vector() format
+- [ ] `checkFAQ` function uses native Firestore vector search (findNearest)
 - [ ] Confidence threshold >80% for auto-response
+- [ ] iOS receives matchedQuestion in response
 - [ ] iOS auto-sends FAQ answers
 - [ ] AI-generated badge shows on auto-responses
 - [ ] FAQ check failures don't block message delivery
@@ -780,12 +962,13 @@ Create creator profile in Firestore manually via Firebase Console:
 **Create: `functions/src/smart-replies.ts`**
 
 ```typescript
-import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import * as logger from 'firebase-functions/logger';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 
 const openai = new OpenAI({
-  apiKey: functions.config().openai.key,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 interface Message {
@@ -810,15 +993,22 @@ interface SmartReplyResponse {
   };
 }
 
+interface SmartReplyRequest {
+  conversationId: string;
+  messageText: string;
+}
+
 /**
  * Generate 3 context-aware smart replies in creator's voice
  * Features: Response Drafting (2) + Advanced AI Capability
  */
-export const generateSmartReplies = functions.https.onCall(async (data, context) => {
-  const { conversationId, messageText } = data;
+export const generateSmartReplies = onCall<SmartReplyRequest>({
+  region: 'us-central1',
+}, async (request) => {
+  const { conversationId, messageText } = request.data;
 
   if (!conversationId || !messageText) {
-    throw new functions.https.HttpsError(
+    throw new HttpsError(
       'invalid-argument',
       'conversationId and messageText are required'
     );
@@ -844,7 +1034,7 @@ export const generateSmartReplies = functions.https.onCall(async (data, context)
       .get();
 
     if (!profileDoc.exists) {
-      throw new functions.https.HttpsError('not-found', 'Creator profile not found');
+      throw new HttpsError('not-found', 'Creator profile not found');
     }
 
     const profile = profileDoc.data() as CreatorProfile;
@@ -910,8 +1100,8 @@ Respond with ONLY valid JSON in this exact format:
     } as SmartReplyResponse;
 
   } catch (error) {
-    functions.logger.error('Smart reply generation failed:', error);
-    throw new functions.https.HttpsError('internal', 'Smart reply generation failed');
+    logger.error('Smart reply generation failed', { error });
+    throw new HttpsError('internal', 'Smart reply generation failed');
   }
 });
 ```
@@ -1757,6 +1947,7 @@ NavigationLink {
 
 | Story | Description | Time |
 |-------|-------------|------|
+| 6.0 | Environment Configuration | 15 min |
 | 6.1 | Firebase Cloud Functions Setup | 45 min |
 | 6.2 | Auto-Processing Cloud Function (Features 1, 4, 5) | 2 hrs |
 | 6.3 | FAQ Cloud Function (Feature 3) | 1.5 hrs |
@@ -1766,15 +1957,22 @@ NavigationLink {
 | 6.7 | AI UI Components | 1.5 hrs |
 | 6.8 | Error Handling & Degraded Mode | 1 hr |
 | 6.9 | AI Settings UI | 30 min |
-| **TOTAL** | | **~11 hours** |
+| **TOTAL** | | **~11.25 hours** |
 
 ### Adjustments from Original:
+- **Added:** Story 6.0 Environment Configuration (+15 min)
+- **Updated:** All functions to Firebase Functions v2 (modern API)
+- **Updated:** Environment variables using `process.env` instead of `functions.config()`
+- **Added:** Firestore security rules deployment
 - **Removed:** n8n setup overhead (saved 30 min)
 - **Simplified:** iOS integration (Cloud Functions SDK vs webhooks, saved 1 hr)
 - **Added:** Error handling story (+1 hr)
 - **Added:** Settings UI story (+30 min)
+- **Updated:** FAQ search now uses Firestore native vector search (10x faster, cheaper than manual cosine similarity)
+- **Added:** Firestore vector index setup requirement (critical dependency)
+- **Added:** Production-only deployment (no separate dev environment)
 
-**Realistic estimate: 11 hours** (vs original n8n approach: 12.5 hours)
+**Realistic estimate: 11.25 hours** (vs original n8n approach: 12.5 hours)
 
 ---
 
@@ -1809,9 +2007,29 @@ final class MessageEntity {
 /faqs/{faqId}
   - question: String
   - answer: String
-  - embedding: [Double]  // Generated by Cloud Function
   - category: String
+  - keywords: [String]
+  - embedding: Vector<1536>  // FieldValue.vector() - Generated by Cloud Function
+
+Example after embedding generation:
+{
+  "question": "What time do you stream?",
+  "answer": "I stream Monday-Friday at 7pm EST on YouTube! See you there 🎮",
+  "category": "schedule",
+  "keywords": ["stream", "streaming", "time", "when", "schedule"],
+  "embedding": {
+    "_type": "vector",
+    "_value": [0.123, 0.456, ...1536 dimensions total]
+  }
+}
 ```
+
+**Required Index:**
+- Collection: `faqs`
+- Field: `embedding`
+- Type: Vector
+- Dimensions: 1536
+- Distance Measure: COSINE
 
 **Creator Profile Collection:**
 ```
@@ -1845,6 +2063,94 @@ final class MessageEntity {
     }
   }
 }
+```
+
+---
+
+## 🔒 Firestore Security Rules
+
+**Critical:** These rules must be deployed to protect FAQ and creator profile data.
+
+**Create: `firestore.rules`**
+
+```javascript
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================
+    // FAQ Collection
+    // ========================================
+    // FAQs are read-only from client apps
+    // Only Cloud Functions and admins can write
+    match /faqs/{faqId} {
+      // Anyone can read FAQs (needed for future FAQ browser feature)
+      allow read: if true;
+
+      // Only Cloud Functions can write (via Admin SDK)
+      // Manual writes via Firebase Console only
+      allow write: if false;
+    }
+
+    // ========================================
+    // Creator Profiles Collection
+    // ========================================
+    // Profiles are read-only from client apps
+    // Contains AI personality/tone settings
+    match /creator_profiles/{profileId} {
+      // Only authenticated users can read
+      // (Needed for Smart Replies feature)
+      allow read: if request.auth != null;
+
+      // Only admins via Console can write
+      allow write: if false;
+    }
+
+    // ========================================
+    // User Profiles Collection (existing)
+    // ========================================
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      // Users can update their own profile
+      allow update: if request.auth != null && request.auth.uid == userId;
+
+      // System can create profiles
+      allow create: if request.auth != null;
+    }
+  }
+}
+```
+
+**Deploy Rules:**
+
+```bash
+# From project root
+firebase deploy --only firestore:rules
+
+# Verify deployment
+# Go to Firebase Console > Firestore > Rules
+# Check "Published" timestamp
+```
+
+**Security Notes:**
+- FAQs are publicly readable (safe - no sensitive data)
+- Creator profiles readable by authenticated users only
+- All writes happen server-side via Cloud Functions (Admin SDK)
+- Client apps cannot modify FAQ or creator profile data
+
+**Testing Rules (Optional):**
+
+```bash
+# Install emulator suite if not already installed
+npm install -g firebase-tools
+
+# Start Firestore emulator with rules
+firebase emulators:start --only firestore
+
+# Rules are automatically loaded from firestore.rules
 ```
 
 ---
@@ -1952,50 +2258,61 @@ final class MessageEntity {
 
 ## 📦 Implementation Order
 
+### Phase 0: Environment Setup (15 min) - **DO THIS FIRST**
+1. Create `functions/.env` with OpenAI API key
+2. Create `functions/.env.example` for documentation
+3. Add `.env` to `.gitignore`
+4. Set production secrets: `firebase functions:secrets:set OPENAI_API_KEY`
+5. Define CREATOR_UID constant in all function files
+
 ### Phase 1: Infrastructure (45 min)
-1. Initialize Firebase Cloud Functions
-2. Install OpenAI SDK
-3. Configure API keys
-4. Deploy test function
-5. Set up Firebase Emulator Suite
+6. Initialize Firebase Cloud Functions
+7. Install OpenAI SDK and dependencies
+8. Configure `package.json` with correct versions
+9. Deploy test function
+10. Set up Firebase Emulator Suite with environment variables
 
 ### Phase 2: Auto-Processing (2 hours)
-6. Write auto-processing Cloud Function (categorization + sentiment + scoring)
-7. Test with sample messages
-8. Update MessageEntity with AI fields
-9. Update RTDB sync to include AI metadata
-10. Add AI badges to MessageBubbleView
+11. Write auto-processing Cloud Function (categorization + sentiment + scoring)
+12. Test with sample messages
+13. Update MessageEntity with AI fields
+14. Update RTDB sync to include AI metadata
+15. Add AI badges to MessageBubbleView
 
 ### Phase 3: FAQ Auto-Responder (2 hours)
-11. Create 10-15 FAQs in Firestore manually
-12. Write Cloud Function to generate FAQ embeddings
-13. Write checkFAQ Cloud Function (vector search)
-14. Add AIService.checkFAQ() in iOS
-15. Integrate FAQ auto-response in message receiving
-16. Add AI-generated badge to UI
+16. Create Firestore vector index for `faqs.embedding` field (CRITICAL - must wait 5-10 min for build)
+17. Create 10-15 FAQs in Firestore manually with keywords (use `/docs/data/faqs-preseed.json`)
+18. Write Cloud Function to generate FAQ embeddings (uses FieldValue.vector())
+19. Deploy and run generateFAQEmbeddings function
+20. Verify embeddings stored correctly in Firestore
+21. Write checkFAQ Cloud Function (uses native findNearest)
+22. Add AIService.checkFAQ() in iOS
+23. Integrate FAQ auto-response in message receiving
+24. Add AI-generated badge to UI
 
 ### Phase 4: Context-Aware Smart Replies (3 hours)
-17. Create creator profile in Firestore manually
-18. Write generateSmartReplies Cloud Function
-19. Test with conversation context fetching
-20. Create SmartReplyPickerView UI component
-21. Add "Draft Reply" button to MessageThreadView
-22. Test end-to-end with real conversations
+25. Create creator profile in Firestore manually
+26. Write generateSmartReplies Cloud Function
+27. Test with conversation context fetching
+28. Create SmartReplyPickerView UI component
+29. Add "Draft Reply" button to MessageThreadView
+30. Test end-to-end with real conversations
 
 ### Phase 5: Error Handling & Settings (1.5 hours)
-23. Add timeout and error handling to Cloud Functions
-24. Add graceful degradation to iOS
-25. Create AI Settings UI
-26. Wire up settings toggles
+31. Add timeout and error handling to Cloud Functions
+32. Add graceful degradation to iOS
+33. Create AI Settings UI
+34. Wire up settings toggles
 
-### Phase 6: Polish & Testing (1 hour)
-27. Test all 5 AI features end-to-end
-28. Verify latency meets targets
-29. Test error handling (network failures, timeouts)
-30. Polish UI animations and loading states
-31. Update documentation
+### Phase 6: Security & Polish (1 hour)
+35. Deploy Firestore security rules
+36. Test all 5 AI features end-to-end
+37. Verify latency meets targets
+38. Test error handling (network failures, timeouts)
+39. Polish UI animations and loading states
+40. Update documentation
 
-**Total: ~11 hours**
+**Total: ~11.25 hours**
 
 ---
 

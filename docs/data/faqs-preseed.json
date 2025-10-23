@@ -1,0 +1,109 @@
+{
+  "faqs": [
+    {
+      "id": "faq_001",
+      "question": "What time do you stream?",
+      "answer": "I stream Monday-Friday at 7pm EST on YouTube! See you there 🎮 Catch replays on the channel if you miss it!",
+      "category": "schedule",
+      "keywords": ["stream", "streaming", "time", "when", "schedule", "youtube", "live", "broadcast"]
+    },
+    {
+      "id": "faq_002",
+      "question": "How can I support you?",
+      "answer": "Thanks for asking! You can support through YouTube memberships, Patreon, or just sharing my content. Every bit helps! 🙏 The real support though? Your engagement and feedback!",
+      "category": "support",
+      "keywords": ["support", "patreon", "membership", "donate", "help", "contribute", "money", "tip"]
+    },
+    {
+      "id": "faq_003",
+      "question": "Can I collaborate with you?",
+      "answer": "Collaboration opportunities, I love! 🤝 DM me your idea with details. Tech content creators especially welcome. Review all serious proposals, I do.",
+      "category": "business",
+      "keywords": ["collab", "collaborate", "partnership", "work together", "sponsor", "business", "opportunity"]
+    },
+    {
+      "id": "faq_004",
+      "question": "How long does it take you to respond to DMs?",
+      "answer": "I try to respond within 24-48 hours! Sometimes faster if I'm online. Thanks for your patience 🙌",
+      "category": "schedule",
+      "keywords": ["response time", "dm", "message", "reply", "answer", "how long", "wait"]
+    },
+    {
+      "id": "faq_005",
+      "question": "What's your tech stack?",
+      "answer": "Currently building with Swift/SwiftUI for iOS, Firebase backend, and OpenAI for AI features. Love working with modern, clean architectures!",
+      "category": "technical",
+      "keywords": ["tech stack", "technology", "framework", "tools", "what do you use", "programming", "development"]
+    },
+    {
+      "id": "faq_006",
+      "question": "How do I get early access to your projects?",
+      "answer": "Join the community! Members get early access to beta builds, behind-the-scenes content, and input on what I build next. Link in bio! 🚀",
+      "category": "support",
+      "keywords": ["early access", "beta", "testflight", "preview", "first look", "exclusive", "member"]
+    },
+    {
+      "id": "faq_007",
+      "question": "Can you help me debug my code?",
+      "answer": "For quick questions, ask in the community chat! For 1-on-1 help, I offer paid consulting sessions. DM me for details!",
+      "category": "technical",
+      "keywords": ["help", "debug", "code", "error", "problem", "fix", "consulting", "tutoring"]
+    },
+    {
+      "id": "faq_008",
+      "question": "Where can I find your content?",
+      "answer": "YouTube for tutorials and streams, Twitter for quick tips, and GitHub for code. All links in my bio! Subscribe to stay updated 📱",
+      "category": "general",
+      "keywords": ["content", "videos", "where", "find", "youtube", "twitter", "github", "social"]
+    },
+    {
+      "id": "faq_009",
+      "question": "Do you take tutorial requests?",
+      "answer": "Absolutely! Drop your request in the community or DM me. Can't promise I'll do every one, but I read them all and pick based on what helps the most people 💡",
+      "category": "content",
+      "keywords": ["tutorial", "request", "teach", "learn", "video", "topic", "suggestion", "idea"]
+    },
+    {
+      "id": "faq_010",
+      "question": "Are you hiring or looking for contributors?",
+      "answer": "Not actively hiring right now, but always open to collaborations! If you're working on something cool in the Swift/iOS space, let's chat!",
+      "category": "business",
+      "keywords": ["hiring", "job", "work", "contributor", "team", "join", "employment", "opportunity"]
+    },
+    {
+      "id": "faq_011",
+      "question": "What's the best way to learn iOS development?",
+      "answer": "Start with Apple's Swift Playgrounds, then build a simple app. My beginner series on YouTube covers the fundamentals. Most importantly: build stuff! 🛠️",
+      "category": "technical",
+      "keywords": ["learn", "ios", "swift", "beginner", "start", "tutorial", "how to", "education"]
+    },
+    {
+      "id": "faq_012",
+      "question": "Can I use your code in my project?",
+      "answer": "If it's open source on my GitHub, yes! Just check the license (usually MIT). Attribution appreciated but not required. Build cool stuff! 🎉",
+      "category": "technical",
+      "keywords": ["code", "use", "project", "github", "license", "open source", "share", "copy"]
+    },
+    {
+      "id": "faq_013",
+      "question": "Do you offer sponsorships?",
+      "answer": "For product sponsorships, DM me with details about your tool/service and what you're looking for. Tech tools that help developers are my jam! 🤝",
+      "category": "business",
+      "keywords": ["sponsor", "sponsorship", "advertise", "promotion", "marketing", "deal", "partner"]
+    },
+    {
+      "id": "faq_014",
+      "question": "What timezone are you in?",
+      "answer": "I'm in EST (Eastern Standard Time). Stream times and response times are based on that. Currently that's UTC-5! ⏰",
+      "category": "schedule",
+      "keywords": ["timezone", "time zone", "where", "location", "est", "utc", "when"]
+    },
+    {
+      "id": "faq_015",
+      "question": "Can I be a guest on your stream?",
+      "answer": "Love having guests! If you're building something interesting or have expertise to share, DM me with what you'd like to talk about. Let's make it happen! 🎙️",
+      "category": "content",
+      "keywords": ["guest", "stream", "appear", "interview", "podcast", "talk", "show", "feature"]
+    }
+  ]
+}
