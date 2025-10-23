@@ -31,6 +31,7 @@ struct ConversationListView: View {
     @State private var showProfile = false
     @State private var searchText = ""
     @EnvironmentObject var networkMonitor: NetworkMonitor
+    @EnvironmentObject var authViewModel: AuthViewModel
 
     // MARK: - Computed Properties
 
@@ -57,6 +58,11 @@ struct ConversationListView: View {
                 // Network status banner
                 if !networkMonitor.isConnected {
                     NetworkStatusBanner()
+                }
+
+                // Story 5.4: Message Andrew button for fans
+                if authViewModel.currentUser?.isFan == true {
+                    messageAndrewButton
                 }
 
                 // Conversations or empty state
@@ -94,11 +100,11 @@ struct ConversationListView: View {
                 viewModel?.stopRealtimeListener()
             }
             .sheet(isPresented: $showRecipientPicker) {
-                RecipientPickerView { userID in
+                RecipientPickerView(onSelect: { userID in
                     Task {
                         await createConversation(withUserID: userID)
                     }
-                }
+                }, currentUser: authViewModel.currentUser)
             }
             .sheet(isPresented: $showGroupCreation) {
                 GroupCreationView()
@@ -106,10 +112,58 @@ struct ConversationListView: View {
             .sheet(isPresented: $showProfile) {
                 ProfileView()
             }
+            .alert("Error", isPresented: .constant(viewModel?.error != nil)) {
+                Button("OK") {
+                    viewModel?.error = nil
+                }
+            } message: {
+                if let error = viewModel?.error {
+                    Text(error.localizedDescription)
+                }
+            }
         }
     }
 
     // MARK: - Subviews
+
+    /// Story 5.4: Message Andrew button for fans
+    private var messageAndrewButton: some View {
+        Button {
+            Task {
+                await createDMWithCreator()
+            }
+        } label: {
+            HStack {
+                Image(systemName: "envelope.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                Text("Message Andrew")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                LinearGradient(
+                    colors: [.blue, .blue.opacity(0.8)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .cornerRadius(12)
+        }
+        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+        .listRowBackground(Color.clear)
+        .accessibilityLabel("Message Andrew")
+        .accessibilityHint("Start a direct message conversation with Andrew")
+    }
 
     private var profileButton: some View {
         Button {
@@ -233,6 +287,20 @@ struct ConversationListView: View {
             )
         } catch {
             print("❌ Failed to create conversation: \(error)")
+            // Error is already set in viewModel.error and will be displayed in UI
+        }
+    }
+
+    /// Story 5.4: Create DM with creator (Andrew)
+    private func createDMWithCreator() async {
+        guard let viewModel = viewModel else { return }
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return }
+
+        do {
+            let _ = try await viewModel.createDMWithCreator(currentUserID: currentUserID)
+        } catch {
+            print("❌ Failed to create DM with creator: \(error)")
+            // Error is already set in viewModel.error and will be displayed in UI
         }
     }
 

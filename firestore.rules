@@ -2,6 +2,36 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ============================================
+    // HELPER FUNCTIONS
+    // ============================================
+
+    /// Check if a user is the creator (Andrew)
+    function isCreator(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.userType == 'creator';
+    }
+
+    /// Check if a user is a fan
+    function isFan(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.userType == 'fan';
+    }
+
+    /// Validate DM restrictions (Story 5.4)
+    /// - Fans can only DM creator
+    /// - Creator can DM anyone
+    /// - Both fans cannot DM each other
+    function validateDMRestrictions(participantIDs) {
+      // For group conversations (more than 2 participants), allow
+      let isGroup = participantIDs.size() > 2;
+
+      // If it's a DM (2 participants), enforce restrictions
+      let isDM = participantIDs.size() == 2;
+
+      return isGroup || (isDM && (
+        // At least one participant must be creator
+        isCreator(participantIDs[0]) || isCreator(participantIDs[1])
+      ));
+    }
 
     // ============================================
     // DISPLAY NAMES COLLECTION (Public Read)
@@ -57,10 +87,25 @@ service cloud.firestore {
     // ============================================
     // CONVERSATIONS & MESSAGES (Private)
     // ============================================
-    // These will be added later - for now, deny all access
+    // Story 5.4: DM restrictions - fans can only DM creator
 
     match /conversations/{conversationId} {
-      allow read, write: if false; // TODO: Add proper rules in Epic 2
+      // Allow reading conversations if user is a participant
+      allow read: if request.auth != null
+                  && request.auth.uid in resource.data.participantIDs;
+
+      // Allow creating conversations with DM restrictions
+      allow create: if request.auth != null
+                    && request.auth.uid in request.resource.data.participantIDs
+                    && validateDMRestrictions(request.resource.data.participantIDs);
+
+      // Allow updating conversations if user is a participant
+      allow update: if request.auth != null
+                    && request.auth.uid in resource.data.participantIDs;
+
+      // Allow deleting conversations if user is a participant
+      allow delete: if request.auth != null
+                    && request.auth.uid in resource.data.participantIDs;
     }
 
     match /messages/{messageId} {

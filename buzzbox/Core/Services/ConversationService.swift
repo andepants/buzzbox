@@ -23,6 +23,31 @@ final class ConversationService {
 
     private init() {}
 
+    // MARK: - DM Validation
+
+    /// Validates whether a DM can be created between sender and recipient
+    /// - Parameters:
+    ///   - sender: User initiating the DM
+    ///   - recipient: User receiving the DM
+    /// - Throws: DMValidationError if validation fails
+    /// - Note: Creator can DM anyone, fans can only DM creator
+    nonisolated func canCreateDM(from sender: UserEntity, to recipient: UserEntity) throws {
+        // Creator can DM anyone
+        if sender.isCreator {
+            return
+        }
+
+        // Fan can only DM creator
+        if sender.isFan && recipient.isFan {
+            throw DMValidationError.bothFans
+        }
+
+        // Fan can DM creator (allow)
+        if sender.isFan && recipient.isCreator {
+            return
+        }
+    }
+
     // MARK: - Conversation Operations
 
     /// Syncs a conversation to RTDB (supports both 1:1 and group conversations)

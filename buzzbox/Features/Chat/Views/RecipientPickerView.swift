@@ -16,20 +16,33 @@ struct RecipientPickerView: View {
     // MARK: - Properties
 
     let onSelect: (String) -> Void
+    let currentUser: User?
 
     @State private var searchText = ""
     @State private var users: [UserEntity] = []
     @State private var isLoading = false
+    @State private var selectedUserForProfile: UserEntity?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
     // MARK: - Computed Properties
 
     var filteredUsers: [UserEntity] {
-        if searchText.isEmpty {
-            return users
+        // Story 5.4: Fans can only see creator in recipient picker
+        let baseUsers: [UserEntity]
+        if currentUser?.isFan == true {
+            // Fans can only DM creator
+            baseUsers = users.filter { $0.isCreator }
+        } else {
+            // Creator can DM anyone
+            baseUsers = users
         }
-        return users.filter {
+
+        // Apply search filter
+        if searchText.isEmpty {
+            return baseUsers
+        }
+        return baseUsers.filter {
             $0.displayName.localizedCaseInsensitiveContains(searchText)
         }
     }
@@ -64,6 +77,17 @@ struct RecipientPickerView: View {
             }
             .task {
                 await loadUsers()
+            }
+            .sheet(item: $selectedUserForProfile) { user in
+                UserProfileDetailView(
+                    user: user,
+                    currentUser: currentUser,
+                    onMessageTapped: { userID in
+                        selectedUserForProfile = nil
+                        onSelect(userID)
+                        dismiss()
+                    }
+                )
             }
         }
     }
@@ -128,6 +152,13 @@ struct RecipientPickerView: View {
                 .padding(.vertical, 4)
             }
             .buttonStyle(.plain)
+            .contextMenu {
+                Button {
+                    selectedUserForProfile = user
+                } label: {
+                    Label("View Profile", systemImage: "person.circle")
+                }
+            }
         }
         .listStyle(.plain)
     }
@@ -159,11 +190,16 @@ struct RecipientPickerView: View {
                 // Filter out current user
                 guard userID != currentUserID else { continue }
 
+                // Story 5.4: Fetch userType to enable DM filtering
+                let userTypeString = data["userType"] as? String ?? "fan"
+                let userType = UserType(rawValue: userTypeString) ?? .fan
+
                 let user = UserEntity(
                     id: userID,
                     email: data["email"] as? String ?? "",
                     displayName: data["displayName"] as? String ?? "Unknown",
-                    photoURL: data["profilePictureURL"] as? String
+                    photoURL: data["profilePictureURL"] as? String,
+                    userType: userType
                 )
 
                 fetchedUsers.append(user)
@@ -183,7 +219,7 @@ struct RecipientPickerView: View {
 // MARK: - Preview
 
 #Preview {
-    RecipientPickerView { userID in
+    RecipientPickerView(onSelect: { userID in
         print("Selected user: \(userID)")
-    }
+    }, currentUser: nil)
 }

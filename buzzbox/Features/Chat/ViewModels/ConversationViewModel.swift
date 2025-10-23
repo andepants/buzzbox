@@ -9,6 +9,7 @@
 import SwiftUI
 import SwiftData
 import FirebaseDatabase
+import FirebaseFirestore
 import FirebaseAuth
 
 /// ViewModel for managing conversation operations
@@ -36,6 +37,48 @@ final class ConversationViewModel {
 
     // MARK: - Conversation Operations
 
+    /// Creates a DM with the creator (Andrew) - simplified for fans
+    /// - Parameter currentUserID: Current authenticated user ID
+    /// - Returns: ConversationEntity for DM with creator
+    /// - Throws: ConversationError if creator not found or validation fails
+    func createDMWithCreator(currentUserID: String) async throws -> ConversationEntity {
+        isLoading = true
+        defer { isLoading = false }
+
+        // Get creator user from Firestore
+        // Creator email is hardcoded (Story 5.2)
+        let creatorEmail = "andrewsheim@gmail.com"
+
+        do {
+            // Find creator by querying Firestore users collection
+            let snapshot = try await Firestore.firestore()
+                .collection("users")
+                .whereField("email", isEqualTo: creatorEmail)
+                .limit(to: 1)
+                .getDocuments()
+
+            guard let creatorDoc = snapshot.documents.first else {
+                let error = ConversationError.recipientNotFound
+                self.error = error
+                throw error
+            }
+
+            let creatorID = creatorDoc.documentID
+
+            // Create conversation with creator
+            return try await createConversation(
+                withUserID: creatorID,
+                currentUserID: currentUserID
+            )
+        } catch let error as ConversationError {
+            throw error
+        } catch {
+            let convError = ConversationError.creationFailed
+            self.error = convError
+            throw convError
+        }
+    }
+
     /// Creates a new one-on-one conversation with deterministic ID
     /// - Parameters:
     ///   - userID: Recipient user ID
@@ -50,13 +93,29 @@ final class ConversationViewModel {
         defer { isLoading = false }
 
         // Step 1: Validate recipient exists
-        guard let _ = try? await conversationService.getUser(userID: userID) else {
+        guard let recipient = try? await conversationService.getUser(userID: userID) else {
             let error = ConversationError.recipientNotFound
             self.error = error
             throw error
         }
 
-        // Step 2: Check if user is blocked
+        // Step 2: Validate current user exists
+        guard let sender = try? await conversationService.getUser(userID: currentUserID) else {
+            let error = ConversationError.recipientNotFound
+            self.error = error
+            throw error
+        }
+
+        // Step 3: Validate DM permissions (Story 5.4)
+        do {
+            try conversationService.canCreateDM(from: sender, to: recipient)
+        } catch let dmError as DMValidationError {
+            let error = ConversationError.dmRestricted(dmError.localizedDescription)
+            self.error = error
+            throw error
+        }
+
+        // Step 4: Check if user is blocked
         if try await conversationService.isBlocked(userID: userID, currentUserID: currentUserID) {
             let error = ConversationError.userBlocked
             self.error = error
@@ -262,6 +321,7 @@ enum ConversationError: LocalizedError {
     case userBlocked
     case creationFailed
     case networkError
+    case dmRestricted(String)
 
     var errorDescription: String? {
         switch self {
@@ -273,6 +333,8 @@ enum ConversationError: LocalizedError {
             return "Failed to create conversation. Please try again."
         case .networkError:
             return "Network error. Please check your connection and try again."
+        case .dmRestricted(let message):
+            return message
         }
     }
 }
