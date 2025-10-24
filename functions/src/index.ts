@@ -24,6 +24,7 @@ admin.initializeApp();
 export {processMessageAI} from "./ai-processing";
 export {checkFAQ} from "./faq";
 export {generateSmartReplies} from "./smart-replies";
+export {analyzeConversation} from "./conversation-analysis";
 
 // Export Seed Data functions (QA testing only)
 export {seedFAQs, seedCreatorProfile} from "./seed-data";

@@ -14,7 +14,7 @@ enum Constants {
     /// Creator's Firebase Auth UID (Andrew Heim)
     /// This matches CREATOR_UID from Cloud Functions
     /// Used to identify messages TO the creator for FAQ auto-response
-    static let CREATOR_UID = "UoLk9GtxDaaYGlI8Ah6RnCbXXbf2"
+    static let CREATOR_UID = "pzkN1Va8GiWGrdKhMT6HekMTOyE2"
 
     /// Creator's email address
     static let CREATOR_EMAIL = "andrewsheim@gmail.com"

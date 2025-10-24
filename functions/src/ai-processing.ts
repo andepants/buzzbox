@@ -19,7 +19,7 @@ import * as admin from "firebase-admin";
 import OpenAI from "openai";
 
 // Creator UID constant (Andrew's Firebase Auth UID)
-const CREATOR_UID = "UoLk9GtxDaaYGlI8Ah6RnCbXXbf2";
+const CREATOR_UID = "pzkN1Va8GiWGrdKhMT6HekMTOyE2";
 
 /**
  * Message data structure from RTDB

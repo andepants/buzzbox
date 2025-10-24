@@ -97,6 +97,45 @@ final class AIService {
             throw AIServiceError.smartReplyFailed(error)
         }
     }
+
+    /// Generate a single targeted smart reply
+    /// - Parameters:
+    ///   - conversationId: ID of the conversation for context
+    ///   - messageText: The message to generate a reply for
+    ///   - replyType: Type of reply (short, funny, professional)
+    /// - Returns: Single AI-generated reply draft
+    nonisolated func generateSingleSmartReply(
+        conversationId: String,
+        messageText: String,
+        replyType: String
+    ) async throws -> String {
+        do {
+            let callable = functions.httpsCallable("generateSmartReplies")
+            let result = try await callable.call([
+                "conversationId": conversationId,
+                "messageText": messageText,
+                "replyType": replyType
+            ])
+
+            let data = try JSONSerialization.data(withJSONObject: result.data)
+            let decoder = JSONDecoder()
+            let response = try decoder.decode(SmartReplyResponse.self, from: data)
+
+            // Extract the specific reply type
+            switch replyType {
+            case "short":
+                return response.drafts.short
+            case "funny":
+                return response.drafts.medium // Map funny to medium
+            case "professional":
+                return response.drafts.detailed // Map professional to detailed
+            default:
+                return response.drafts.medium
+            }
+        } catch {
+            throw AIServiceError.smartReplyFailed(error)
+        }
+    }
 }
 
 // MARK: - Error Types

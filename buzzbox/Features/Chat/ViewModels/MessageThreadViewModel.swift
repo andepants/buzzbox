@@ -592,6 +592,40 @@ final class MessageThreadViewModel {
             print("    └─ OpportunityScore: \(existing.opportunityScore.map(String.init) ?? "nil")")
             try? modelContext.save()
         }
+
+        // Update smart replies cache if present (Story 6.10: Smart Replies Caching)
+        if let smartRepliesData = messageData["smartReplies"] as? [String: Any] {
+            var smartRepliesUpdated = false
+
+            if let short = smartRepliesData["short"] as? String {
+                existing.smartReplyShort = short
+                smartRepliesUpdated = true
+            }
+
+            if let medium = smartRepliesData["medium"] as? String {
+                existing.smartReplyMedium = medium
+                smartRepliesUpdated = true
+            }
+
+            if let detailed = smartRepliesData["detailed"] as? String {
+                existing.smartReplyDetailed = detailed
+                smartRepliesUpdated = true
+            }
+
+            if let generatedAtMs = smartRepliesData["generatedAt"] as? Double {
+                existing.smartRepliesGeneratedAt = Date(timeIntervalSince1970: generatedAtMs / 1000.0)
+                smartRepliesUpdated = true
+            }
+
+            if smartRepliesUpdated {
+                print("💬 [SMART REPLIES] Message updated with cached smart replies")
+                print("    └─ MessageID: \(messageID)")
+                print("    └─ Short: \(existing.smartReplyShort != nil ? "✅" : "❌")")
+                print("    └─ Medium: \(existing.smartReplyMedium != nil ? "✅" : "❌")")
+                print("    └─ Detailed: \(existing.smartReplyDetailed != nil ? "✅" : "❌")")
+                try? modelContext.save()
+            }
+        }
     }
 
     private func updateConversationLastMessage(text: String) async {

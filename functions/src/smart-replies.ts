@@ -56,6 +56,7 @@ interface SmartReplyResponse {
 interface SmartReplyRequest {
   conversationId: string;
   messageText: string;
+  replyType?: "short" | "funny" | "professional"; // NEW: Single reply type
 }
 
 /**
@@ -69,7 +70,7 @@ export const generateSmartReplies = onCall<SmartReplyRequest>({
   secrets: ["OPENAI_API_KEY"],
   timeoutSeconds: 30, // GPT-4o-mini needs more time for context
 }, async (request) => {
-  const {conversationId, messageText} = request.data;
+  const {conversationId, messageText, replyType} = request.data;
 
   if (!conversationId || !messageText) {
     throw new HttpsError(
@@ -79,6 +80,55 @@ export const generateSmartReplies = onCall<SmartReplyRequest>({
   }
 
   try {
+    // If replyType specified, generate single targeted reply
+    if (replyType) {
+      logger.info("✨ Generating single smart reply", {
+        conversationId,
+        replyType,
+        messagePreview: messageText.substring(0, 50),
+      });
+
+      const draft = await generateSingleReply(
+        conversationId,
+        messageText,
+        replyType,
+      );
+
+      // Cache single reply in RTDB on the last message
+      try {
+        const lastMessageSnapshot = await admin.database()
+          .ref(`/messages/${conversationId}`)
+          .orderByChild("timestamp")
+          .limitToLast(1)
+          .once("value");
+
+        if (lastMessageSnapshot.exists()) {
+          const updates: { [key: string]: string | object } = {};
+          lastMessageSnapshot.forEach((child) => {
+            const cacheKey = replyType === "short" ? "short" :
+              replyType === "funny" ? "medium" : "detailed";
+            updates[`/messages/${conversationId}/${child.key}/smartReplies/${cacheKey}`] = draft;
+            updates[`/messages/${conversationId}/${child.key}/smartReplies/generatedAt`] =
+              admin.database.ServerValue.TIMESTAMP;
+          });
+
+          await admin.database().ref().update(updates);
+          logger.info("💾 Single smart reply cached in RTDB", {conversationId, replyType});
+        }
+      } catch (cacheError) {
+        logger.warn("⚠️ Failed to cache single smart reply", {cacheError});
+      }
+
+      return {
+        drafts: {
+          short: replyType === "short" ? draft : "",
+          medium: replyType === "funny" ? draft : "",
+          detailed: replyType === "professional" ? draft : "",
+        },
+      } as SmartReplyResponse;
+    }
+
+    // Otherwise, generate all 3 (existing behavior for backward compatibility)
     logger.info("✨ Generating smart replies", {
       conversationId,
       messagePreview: messageText.substring(0, 50),
@@ -183,6 +233,33 @@ Respond with ONLY valid JSON in this exact format:
       detailedLength: drafts.detailed?.length || 0,
     });
 
+    // Cache smart replies in RTDB on the last message in conversation
+    try {
+      const lastMessageSnapshot = await admin.database()
+        .ref(`/messages/${conversationId}`)
+        .orderByChild("timestamp")
+        .limitToLast(1)
+        .once("value");
+
+      if (lastMessageSnapshot.exists()) {
+        const updates: { [key: string]: string | object } = {};
+        lastMessageSnapshot.forEach((child) => {
+          updates[`/messages/${conversationId}/${child.key}/smartReplies`] = {
+            short: drafts.short || "",
+            medium: drafts.medium || "",
+            detailed: drafts.detailed || "",
+            generatedAt: admin.database.ServerValue.TIMESTAMP,
+          };
+        });
+
+        await admin.database().ref().update(updates);
+        logger.info("💾 Smart replies cached in RTDB", {conversationId});
+      }
+    } catch (cacheError) {
+      // Don't fail the request if caching fails
+      logger.warn("⚠️ Failed to cache smart replies", {cacheError});
+    }
+
     return {
       drafts: {
         short: drafts.short || "",
@@ -195,3 +272,110 @@ Respond with ONLY valid JSON in this exact format:
     throw new HttpsError("internal", "Smart reply generation failed");
   }
 });
+
+/**
+ * Generate a single targeted reply based on type
+ * @param {string} conversationId - ID of the conversation for context
+ * @param {string} messageText - The message to reply to
+ * @param {"short" | "funny" | "professional"} replyType - Type of reply
+ * @return {Promise<string>} Generated reply text
+ */
+async function generateSingleReply(
+  conversationId: string,
+  messageText: string,
+  replyType: "short" | "funny" | "professional"
+): Promise<string> {
+  // Fetch last 20 messages for context (or all if <20 exist)
+  const messagesSnapshot = await admin.database()
+    .ref(`/messages/${conversationId}`)
+    .orderByChild("timestamp")
+    .limitToLast(20)
+    .once("value");
+
+  const messages: Message[] = [];
+  messagesSnapshot.forEach((child) => {
+    const msg = child.val();
+    messages.push({
+      senderID: msg.senderID,
+      senderName: msg.senderName || "User",
+      text: msg.text,
+      timestamp: msg.timestamp,
+    });
+  });
+
+  // Use all available messages if conversation has <20
+  logger.info(`Using ${messages.length} messages for context`);
+
+  // Fetch creator profile
+  const profileDoc = await admin.firestore()
+    .collection("creator_profiles")
+    .doc("andrew")
+    .get();
+
+  if (!profileDoc.exists) {
+    throw new HttpsError("not-found", "Creator profile not found");
+  }
+
+  const profile = profileDoc.data() as CreatorProfile;
+
+  // Build context
+  const conversationContext = messages
+    .map((m) => `${m.senderName}: ${m.text}`)
+    .join("\n");
+
+  // Type-specific prompts
+  const typePrompts = {
+    short: "Generate a SHORT reply (1 sentence max). " +
+      "Quick, warm acknowledgment. Be concise.",
+    funny: "Generate a FUNNY reply (2-3 sentences). " +
+      "Use Andrew's playful tone. Make it light-hearted and engaging. " +
+      "Use emojis if appropriate.",
+    professional: "Generate a PROFESSIONAL reply (3-4 sentences). " +
+      "Detailed, helpful, and thorough. Maintain warmth but be comprehensive.",
+  };
+
+  const systemPrompt = `You are Andrew, a ${profile.personality}
+
+Your tone: ${profile.tone}
+
+Example responses you've written:
+${profile.examples.join("\n")}
+
+Avoid: ${profile.avoid.join(", ")}
+
+Recent conversation context:
+${conversationContext}`;
+
+  const userPrompt = `The fan just sent: "${messageText}"
+
+${typePrompts[replyType]}
+
+Make it sound authentic to Andrew's voice. Use conversation context to make it relevant.
+
+Respond with ONLY the reply text (no JSON, no formatting).`;
+
+  // Initialize OpenAI client
+  const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+
+  // Call OpenAI GPT-4o-mini
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {role: "system", content: systemPrompt},
+      {role: "user", content: userPrompt},
+    ],
+    temperature: 0.7,
+    max_tokens: replyType === "short" ? 50 : (replyType === "funny" ? 100 : 150),
+  });
+
+  const draft = completion.choices[0].message.content?.trim() || "";
+
+  logger.info("✅ Single smart reply generated", {
+    replyType,
+    draftLength: draft.length,
+  });
+
+  return draft;
+}

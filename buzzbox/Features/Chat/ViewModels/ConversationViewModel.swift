@@ -294,6 +294,17 @@ final class ConversationViewModel {
             let channelEmoji = conversationData["channelEmoji"] as? String
             let channelDescription = conversationData["channelDescription"] as? String
 
+            // Parse AI analysis fields (Story 6.11)
+            let aiSentiment = conversationData["aiSentiment"] as? String
+            let aiCategory = conversationData["aiCategory"] as? String
+            let aiBusinessScore = conversationData["aiBusinessScore"] as? Int
+            let aiAnalyzedAtMillis = conversationData["aiAnalyzedAt"] as? Double
+
+            // Log AI data for debugging
+            if aiSentiment != nil || aiCategory != nil {
+                print("📊 [SYNC] Conv \(conversationID.prefix(8)): AI data found - sentiment=\(aiSentiment ?? "nil"), category=\(aiCategory ?? "nil"), score=\(aiBusinessScore?.description ?? "nil")")
+            }
+
             // Parse timestamps (RTDB stores in milliseconds)
             let createdAtMillis = conversationData["createdAt"] as? Double ?? 0
             let updatedAtMillis = conversationData["updatedAt"] as? Double ?? 0
@@ -328,6 +339,14 @@ final class ConversationViewModel {
                 conversation.unreadCount = conversationData["unreadCount"] as? Int ?? 0
                 conversation.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
 
+                // Set AI analysis fields (Story 6.11)
+                conversation.aiSentiment = aiSentiment
+                conversation.aiCategory = aiCategory
+                conversation.aiBusinessScore = aiBusinessScore
+                if let analyzedMillis = aiAnalyzedAtMillis, analyzedMillis > 0 {
+                    conversation.aiAnalyzedAt = Date(timeIntervalSince1970: analyzedMillis / 1000)
+                }
+
                 modelContext.insert(conversation)
                 processedCount += 1
             } else if let existing = existing {
@@ -344,6 +363,20 @@ final class ConversationViewModel {
                 existing.lastMessageAt = Date(timeIntervalSince1970: lastMessageMillis / 1000)
                 existing.unreadCount = conversationData["unreadCount"] as? Int ?? 0
                 existing.updatedAt = Date(timeIntervalSince1970: updatedAtMillis / 1000)
+
+                // Update AI analysis fields (Story 6.11)
+                existing.aiSentiment = aiSentiment
+                existing.aiCategory = aiCategory
+                existing.aiBusinessScore = aiBusinessScore
+                if let analyzedMillis = aiAnalyzedAtMillis, analyzedMillis > 0 {
+                    existing.aiAnalyzedAt = Date(timeIntervalSince1970: analyzedMillis / 1000)
+                }
+
+                // Log AI data update for debugging
+                if aiSentiment != nil || aiCategory != nil {
+                    print("✅ [SYNC] Updated AI data for conv \(conversationID.prefix(8))")
+                }
+
                 processedCount += 1
             }
 

@@ -88,8 +88,16 @@ final class MessageEntity {
     /// FAQ confidence score (0.0 - 1.0)
     var faqConfidence: Double?
 
-    /// AI-generated draft reply
+    /// AI-generated draft reply (deprecated - use smartReplies instead)
     var smartReplyDraft: String?
+
+    /// Cached smart replies from Cloud Function (3 options)
+    var smartReplyShort: String?
+    var smartReplyMedium: String?
+    var smartReplyDetailed: String?
+
+    /// Timestamp when smart replies were generated
+    var smartRepliesGeneratedAt: Date?
 
     /// Supermemory reference ID
     var supermemoryID: String?
@@ -169,6 +177,16 @@ final class MessageEntity {
     /// Check if message is pending sync
     var isPendingSync: Bool {
         syncStatus == .pending || (syncStatus == .failed && shouldRetry)
+    }
+
+    /// Check if smart replies are cached and fresh (generated within last 5 minutes)
+    var hasValidSmartRepliesCache: Bool {
+        guard let generatedAt = smartRepliesGeneratedAt else { return false }
+        guard smartReplyShort != nil || smartReplyMedium != nil || smartReplyDetailed != nil else {
+            return false
+        }
+        // Cache is valid for 5 minutes
+        return Date().timeIntervalSince(generatedAt) < 300
     }
 }
 

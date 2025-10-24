@@ -65,6 +65,16 @@ struct ConversationRowView: View {
                         CreatorBadgeView(size: .small)
                     }
 
+                    // 🆕 AI Category Badge (Story 6.11)
+                    if let category = conversation.aiCategory {
+                        categoryBadge(for: category)
+                    }
+
+                    // 🆕 Business Score Badge (Story 6.11)
+                    if let score = conversation.aiBusinessScore {
+                        businessScoreBadge(score: score)
+                    }
+
                     // Lock icon for creator-only channels
                     if conversation.isGroup && conversation.isCreatorOnly {
                         Image(systemName: "lock.fill")
@@ -112,6 +122,13 @@ struct ConversationRowView: View {
             }
         }
         .padding(.vertical, 8)
+        // 🆕 Sentiment border (Story 6.11)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(sentimentBorderColor, lineWidth: sentimentBorderWidth)
+        )
+        // 🆕 Spam opacity (Story 6.11)
+        .opacity(conversation.aiCategory == "spam" ? 0.5 : 1.0)
         .task {
             await loadRecipientAndPresence()
         }
@@ -168,6 +185,112 @@ struct ConversationRowView: View {
             Text("\(conversation.unreadCount)")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(.white)
+        }
+    }
+
+    // MARK: - 🆕 AI Badge Subviews (Story 6.11)
+
+    /// Category badge for conversation
+    private func categoryBadge(for category: String) -> some View {
+        HStack(spacing: 3) {
+            // Icon for certain categories
+            if category == "urgent" {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 10))
+            } else if category == "super_fan" {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 10))
+            } else if category == "business" {
+                Image(systemName: "briefcase.fill")
+                    .font(.system(size: 10))
+            }
+
+            // Text
+            Text(categoryDisplayText(for: category))
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(categoryColor(for: category))
+        .foregroundStyle(.white)
+        .clipShape(Capsule())
+    }
+
+    /// Business score badge (0-10)
+    private func businessScoreBadge(score: Int) -> some View {
+        Text("\(score)/10")
+            .font(.system(size: 11, weight: .bold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(businessScoreColor(for: score))
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+
+    // MARK: - AI Analysis Helper Methods (Story 6.11)
+
+    private var sentimentBorderColor: Color {
+        guard let sentiment = conversation.aiSentiment else { return .clear }
+
+        switch sentiment {
+        case "positive":
+            return .green.opacity(0.3)
+        case "negative":
+            return .red.opacity(0.3)
+        case "urgent":
+            return .orange.opacity(0.4)
+        default:
+            return .gray.opacity(0.15)
+        }
+    }
+
+    private var sentimentBorderWidth: CGFloat {
+        guard let sentiment = conversation.aiSentiment else { return 0 }
+
+        switch sentiment {
+        case "neutral":
+            return 1
+        default:
+            return 2
+        }
+    }
+
+    private func categoryColor(for category: String) -> Color {
+        switch category {
+        case "fan":
+            return .blue
+        case "super_fan":
+            return .purple
+        case "business":
+            return .green
+        case "spam":
+            return .gray
+        case "urgent":
+            return .orange
+        default:
+            return .blue
+        }
+    }
+
+    private func categoryDisplayText(for category: String) -> String {
+        switch category {
+        case "super_fan":
+            return "Super Fan"
+        default:
+            return category.capitalized
+        }
+    }
+
+    private func businessScoreColor(for score: Int) -> Color {
+        switch score {
+        case 7...10:
+            return .green
+        case 4...6:
+            return .yellow
+        case 0...3:
+            return .red
+        default:
+            return .gray
         }
     }
 

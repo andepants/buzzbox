@@ -83,6 +83,23 @@ final class ConversationEntity {
     /// Supermemory conversation ID for RAG context
     var supermemoryConversationID: String?
 
+    // MARK: - AI Conversation Analysis (Story 6.11)
+
+    /// Overall conversation sentiment (positive, negative, neutral, urgent)
+    var aiSentiment: String?
+
+    /// Conversation category (fan, super_fan, business, spam, urgent)
+    var aiCategory: String?
+
+    /// Business opportunity score (0-10, only set if category is 'business')
+    var aiBusinessScore: Int?
+
+    /// Timestamp when conversation was last analyzed by AI
+    var aiAnalyzedAt: Date?
+
+    /// Number of new messages since last analysis (for triggering re-analysis)
+    var messageCountSinceAnalysis: Int
+
     // MARK: - Relationships
 
     /// All messages in this conversation (cascade delete)
@@ -121,6 +138,13 @@ final class ConversationEntity {
         self.unreadCount = 0
         self.syncStatus = syncStatus
         self.messages = []
+
+        // AI Conversation Analysis (Story 6.11)
+        self.aiSentiment = nil
+        self.aiCategory = nil
+        self.aiBusinessScore = nil
+        self.aiAnalyzedAt = nil
+        self.messageCountSinceAnalysis = 0
     }
 
     // MARK: - Helper Methods
@@ -131,6 +155,9 @@ final class ConversationEntity {
         self.lastMessageAt = message.localCreatedAt
         self.lastMessageSenderID = message.senderID
         self.updatedAt = Date()
+
+        // 🆕 Story 6.11: Increment message count for AI analysis triggering
+        self.messageCountSinceAnalysis += 1
     }
 
     /// Increment unread count

@@ -95,6 +95,11 @@ struct ConversationListView: View {
             .task {
                 setupViewModel()
                 await viewModel?.startRealtimeListener()
+
+                // 🆕 Analyze conversations when creator opens inbox (Story 6.11)
+                if authViewModel.currentUser?.isCreator == true {
+                    await analyzeConversationsIfNeeded()
+                }
             }
             .onDisappear {
                 viewModel?.stopRealtimeListener()
@@ -301,6 +306,37 @@ struct ConversationListView: View {
         } catch {
             // Error is already set in viewModel.error and will be displayed in UI
         }
+    }
+
+    /// 🆕 Story 6.11: Analyze conversations when creator opens inbox
+    /// Only analyzes conversations with new messages since last analysis
+    private func analyzeConversationsIfNeeded() async {
+        print("\n🔵 [ANALYSIS] Starting analysis check...")
+        print("🔵 [ANALYSIS] Current user isCreator: \(authViewModel.currentUser?.isCreator == true)")
+        print("🔵 [ANALYSIS] Total conversations: \(conversations.count)")
+
+        // Get conversations with new messages
+        let conversationsToAnalyze = conversations.filter {
+            $0.messageCountSinceAnalysis > 0
+        }
+
+        print("🔵 [ANALYSIS] Conversations needing analysis: \(conversationsToAnalyze.count)")
+
+        // Log each conversation's state
+        for conv in conversations.prefix(5) {  // Limit to first 5 to avoid spam
+            print("🔵 [ANALYSIS] Conv \(conv.id.prefix(8)): messageCount=\(conv.messageCountSinceAnalysis), category=\(conv.aiCategory ?? "nil"), sentiment=\(conv.aiSentiment ?? "nil"), score=\(conv.aiBusinessScore?.description ?? "nil")")
+        }
+
+        guard !conversationsToAnalyze.isEmpty else {
+            print("🔴 [ANALYSIS] No conversations need analysis - SKIPPING\n")
+            return
+        }
+
+        print("✅ [ANALYSIS] Analyzing \(conversationsToAnalyze.count) conversations...")
+
+        await ConversationAnalysisService.shared.analyzeAllConversations(conversationsToAnalyze)
+
+        print("✅ [ANALYSIS] Analysis complete\n")
     }
 
     private func archiveConversation(_ conversation: ConversationEntity) {
