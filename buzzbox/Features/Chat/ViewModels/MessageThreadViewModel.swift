@@ -26,7 +26,6 @@ final class MessageThreadViewModel {
     private let conversationID: String
     private let modelContext: ModelContext
     private var messagesRef: DatabaseReference
-    private let aiService = AIService() // For FAQ auto-response
 
     private var childAddedHandle: DatabaseHandle?
     private var childChangedHandle: DatabaseHandle?
@@ -75,6 +74,7 @@ final class MessageThreadViewModel {
 
         var recipientID: String?
         var isGroupChat = false
+        var isMessageToCreator = false
 
         if let conversation = try? modelContext.fetch(descriptor).first {
             isGroupChat = conversation.isGroup
@@ -87,12 +87,34 @@ final class MessageThreadViewModel {
                 if let recipientID = recipientID {
                     print("    └─ MessageType: Direct Message (DM)")
                     print("    └─ RecipientID: \(recipientID)")
+
+                    // Check if recipient is the creator by fetching their email
+                    let recipientDescriptor = FetchDescriptor<UserEntity>(
+                        predicate: #Predicate { $0.id == recipientID }
+                    )
+                    if let recipient = try? modelContext.fetch(recipientDescriptor).first {
+                        isMessageToCreator = recipient.email.lowercased() == CREATOR_EMAIL.lowercased()
+
+                        // FAQ TRIGGER DETECTION LOGGING
+                        if isMessageToCreator {
+                            print("🤖 [FAQ CHECK] Message TO creator detected")
+                            print("    └─ RecipientEmail: \(recipient.email)")
+                            print("    └─ ShouldTriggerFAQ: YES (DM to creator)")
+                            print("    └─ ExpectedBehavior: Cloud Function will check FAQ database")
+                            print("    └─ MessageText: \(text)")
+                        } else {
+                            print("ℹ️ [FAQ CHECK] Message NOT to creator")
+                            print("    └─ RecipientEmail: \(recipient.email)")
+                            print("    └─ ShouldTriggerFAQ: NO (not DM to creator)")
+                        }
+                    }
                 } else {
                     print("    └─ ⚠️ Warning: Could not identify recipient")
                 }
             } else {
                 print("    └─ MessageType: Group Chat")
                 print("    └─ Participants: \(conversation.participantIDs.count)")
+                print("ℹ️ [FAQ CHECK] ShouldTriggerFAQ: NO (group chat, not 1:1 DM)")
             }
         }
 
@@ -129,6 +151,12 @@ final class MessageThreadViewModel {
                     "status": "delivered" // Mark as delivered once RTDB confirms storage
                 ]
 
+                let rtdbPath = "/messages/\(conversationID)/\(messageID)"
+                print("📤 [RTDB WRITE] Writing message to Firebase RTDB...")
+                print("    └─ Path: \(rtdbPath)")
+                print("    └─ Data: senderID, text, serverTimestamp, status")
+                print("    └─ This should trigger: onMessageCreated Cloud Function")
+
                 try await messagesRef.child(messageID).setValue(messageData)
 
                 let syncDuration = Date().timeIntervalSince(syncStartTime)
@@ -138,6 +166,16 @@ final class MessageThreadViewModel {
                 print("    └─ ConversationID: \(conversationID)")
                 print("    └─ SyncDuration: \(String(format: "%.2f", syncDuration))s")
                 print("    └─ Status: delivered")
+
+                // FAQ expectation logging
+                if isMessageToCreator && !isGroupChat {
+                    print("🤖 [FAQ EXPECTATION] Cloud Function should now:")
+                    print("    └─ 1. Detect this is a DM to creator")
+                    print("    └─ 2. Check message against FAQ database via OpenAI")
+                    print("    └─ 3. Send FAQ auto-response if match found")
+                    print("    └─ 4. Response will appear as incoming message with isFAQResponse flag")
+                    print("    └─ ⏱️ Expected response time: 2-5 seconds")
+                }
 
                 // Update local sync status and mark as delivered (RTDB confirmed)
                 message.syncStatus = .synced
@@ -432,6 +470,28 @@ final class MessageThreadViewModel {
                 syncStatus: .synced
             )
 
+            // Sync AI-related properties from RTDB
+            message.isAIGenerated = messageData["isAIGenerated"] as? Bool ?? false
+            message.isFAQResponse = messageData["isFAQResponse"] as? Bool ?? false
+
+            // FAQ RESPONSE DETECTION LOGGING
+            if message.isFAQResponse {
+                print("🎉 [FAQ RESPONSE] FAQ auto-response received from Cloud Function!")
+                print("    └─ MessageID: \(messageID)")
+                print("    └─ SenderID: \(senderID) (should be creator)")
+                print("    └─ IsAIGenerated: \(message.isAIGenerated)")
+                print("    └─ IsFAQResponse: \(message.isFAQResponse)")
+                print("    └─ ResponseText: \(messageText)")
+                print("    └─ TextLength: \(messageText.count) characters")
+                print("    └─ FAQ Badge: Will be displayed in UI")
+                print("    └─ ✅ FAQ auto-response system is working!")
+            } else if message.isAIGenerated {
+                print("🤖 [AI MESSAGE] AI-generated message received")
+                print("    └─ MessageID: \(messageID)")
+                print("    └─ IsAIGenerated: true")
+                print("    └─ IsFAQResponse: false (other AI feature)")
+            }
+
             modelContext.insert(message)
             try? modelContext.save()
 
@@ -464,6 +524,8 @@ final class MessageThreadViewModel {
             print("    └─ MessageID: \(messageID)")
             print("    └─ SenderID: \(senderID)")
             print("    └─ ConversationID: \(conversationID)")
+            print("    └─ IsAIGenerated: \(message.isAIGenerated)")
+            print("    └─ IsFAQResponse: \(message.isFAQResponse)")
 
             // Log timestamp comparison details
             if let messageTimestamp = messageTimestamp {
@@ -484,14 +546,14 @@ final class MessageThreadViewModel {
             // If this is someone else's message and not historical, trigger notification
             if !isFromCurrentUser && !isHistoricalMessage {
                 print("    └─ 🔔 Triggering notification...")
-                
+
                 // Mark as delivered in RTDB
                 Task { @MainActor in
                     try? await messagesRef.child(messageID).updateChildValues([
                         "status": "delivered"
                     ])
                 }
-                
+
                 // Trigger notification
                 await triggerNotificationForMessage(
                     messageID: messageID,
@@ -500,15 +562,9 @@ final class MessageThreadViewModel {
                     conversationID: conversationID
                 )
 
-                // FAQ Auto-Response: Check if message is TO creator
-                // Only process if:
-                // 1. Message is from a fan (not from creator)
-                // 2. Message is TO the creator (receiverID == CREATOR_UID or DM to creator)
-                await checkAndRespondToFAQ(
-                    messageText: messageText,
-                    senderID: senderID,
-                    messageID: messageID
-                )
+                // FAQ Auto-Response is now handled server-side in Cloud Functions
+                // See: functions/src/index.ts -> onMessageCreated
+                // No client-side FAQ checking needed anymore
             } else {
                 if isFromCurrentUser {
                     print("    └─ ⏭️  Skipped: Message from current user (no self-notification)")
@@ -590,6 +646,16 @@ final class MessageThreadViewModel {
 
         if let aiProcessedAtMs = messageData["aiProcessedAt"] as? Double {
             existing.aiProcessedAt = Date(timeIntervalSince1970: aiProcessedAtMs / 1000.0)
+            aiMetadataUpdated = true
+        }
+
+        if let isAIGenerated = messageData["isAIGenerated"] as? Bool {
+            existing.isAIGenerated = isAIGenerated
+            aiMetadataUpdated = true
+        }
+
+        if let isFAQResponse = messageData["isFAQResponse"] as? Bool {
+            existing.isFAQResponse = isFAQResponse
             aiMetadataUpdated = true
         }
 
@@ -695,124 +761,11 @@ final class MessageThreadViewModel {
 
     // MARK: - FAQ Auto-Response
 
-    /// Checks if message matches FAQ and auto-sends response
-    /// Story 6.3.5: FAQ Auto-Responder iOS Integration
-    /// Story 6.9: FAQ toggle integration
-    private func checkAndRespondToFAQ(
-        messageText: String,
-        senderID: String,
-        messageID: String
-    ) async {
-        // Check if FAQ auto-response is enabled in settings (Story 6.9)
-        // Default to true if not set (opt-out, not opt-in)
-        let faqEnabled = UserDefaults.standard.object(forKey: Constants.FAQ_AUTO_RESPONSE_ENABLED_KEY) as? Bool ?? true
-        guard faqEnabled else {
-            print("    └─ ⏭️  Skipped FAQ check: FAQ auto-response disabled in settings")
-            return
-        }
-
-        // Only check FAQs for messages TO the creator
-        // Skip if sender is the creator (prevents infinite loops)
-        guard senderID != Constants.CREATOR_UID else {
-            print("    └─ ⏭️  Skipped FAQ check: Message from creator")
-            return
-        }
-
-        // Get conversation to check if this is a DM with creator
-        let descriptor = FetchDescriptor<ConversationEntity>(
-            predicate: #Predicate { $0.id == conversationID }
-        )
-
-        guard let conversation = try? modelContext.fetch(descriptor).first else {
-            return
-        }
-
-        // Only process DMs or channels where creator is participant
-        let isCreatorInConversation = conversation.participantIDs.contains(Constants.CREATOR_UID)
-        guard isCreatorInConversation else {
-            print("    └─ ⏭️  Skipped FAQ check: Creator not in conversation")
-            return
-        }
-
-        print("    └─ 🤖 Checking FAQ for message: \(messageText.prefix(50))...")
-
-        do {
-            // Call FAQ Cloud Function
-            let faqResponse = try await aiService.checkFAQ(messageText)
-
-            // If FAQ matched, auto-send response
-            if faqResponse.isFAQ, let answer = faqResponse.answer {
-                print("    └─ ✅ FAQ matched! Auto-sending response...")
-                print("    └─ Matched Question: \(faqResponse.matchedQuestion ?? "Unknown")")
-
-                // Send FAQ answer as message FROM creator
-                await sendFAQResponse(
-                    answer: answer,
-                    recipientID: senderID
-                )
-            } else {
-                print("    └─ ℹ️  No FAQ match found")
-            }
-        } catch {
-            // Silent failure - don't disrupt user experience
-            print("    └─ ⚠️  FAQ check failed: \(error.localizedDescription)")
-        }
-    }
-
-    /// Sends FAQ response message from creator
-    private func sendFAQResponse(answer: String, recipientID: String) async {
-        let messageID = UUID().uuidString
-
-        print("📤 [FAQ AUTO-RESPONSE] Sending FAQ response")
-        print("    └─ MessageID: \(messageID)")
-        print("    └─ ConversationID: \(conversationID)")
-        print("    └─ RecipientID: \(recipientID)")
-        print("    └─ AnswerLength: \(answer.count) characters")
-
-        // Create message entity with isAIGenerated flag
-        let message = MessageEntity(
-            id: messageID,
-            conversationID: conversationID,
-            senderID: Constants.CREATOR_UID, // Response FROM creator
-            text: answer,
-            localCreatedAt: Date(),
-            status: .sending,
-            syncStatus: .pending
-        )
-        message.isAIGenerated = true // Mark as AI-generated FAQ response
-
-        modelContext.insert(message)
-        try? modelContext.save()
-
-        // Sync to RTDB
-        let messageData: [String: Any] = [
-            "id": messageID,
-            "text": answer,
-            "senderID": Constants.CREATOR_UID,
-            "receiverID": recipientID,
-            "conversationID": conversationID,
-            "status": "sent",
-            "serverTimestamp": ServerValue.timestamp(),
-            "isAIGenerated": true, // Mark in RTDB as well
-        ]
-
-        do {
-            try await messagesRef.child(messageID).setValue(messageData)
-
-            // Mark as synced
-            message.markAsSynced()
-            message.status = .sent
-            try? modelContext.save()
-
-            // Update conversation last message
-            await updateConversationLastMessage(text: answer)
-
-            print("✅ [FAQ AUTO-RESPONSE] FAQ response sent successfully")
-        } catch {
-            print("❌ [FAQ AUTO-RESPONSE] Failed to send: \(error.localizedDescription)")
-            message.markAsFailed(error: error.localizedDescription)
-            try? modelContext.save()
-        }
-    }
+    // FAQ Auto-Response is now handled server-side in Cloud Functions
+    // See: functions/src/index.ts -> onMessageCreated
+    // When a user sends a message to the creator, the Cloud Function automatically:
+    // 1. Checks if it matches an FAQ using GPT-4o-mini
+    // 2. Sends an auto-response from the creator if it matches
+    // This works even when the creator is offline, providing instant responses 24/7
 
 }

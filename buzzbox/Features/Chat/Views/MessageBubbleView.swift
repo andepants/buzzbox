@@ -102,16 +102,41 @@ struct MessageBubbleView: View {
                         .padding(.bottom, 2)
                 }
 
-                // Message bubble
+                // Message bubble with FAQ styling
                 Text(message.text)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
                     .background(bubbleColor)
                     .foregroundColor(textColor)
                     .cornerRadius(18)
+                    .overlay(
+                        // Rainbow gradient border for FAQ responses
+                        Group {
+                            if message.isFAQResponse {
+                                RoundedRectangle(cornerRadius: 18)
+                                    .strokeBorder(
+                                        AngularGradient(
+                                            colors: [
+                                                .red, .orange, .yellow,
+                                                .green, .blue, .purple, .red
+                                            ],
+                                            center: .center
+                                        ),
+                                        lineWidth: 2
+                                    )
+                            }
+                        }
+                    )
+                    .overlay(alignment: .topLeading) {
+                        // FAQ badge for FAQ auto-responses
+                        if message.isFAQResponse {
+                            FAQBadgeView()
+                                .offset(x: -6, y: -10)
+                        }
+                    }
 
-                // AI-generated indicator (Story 6.7)
-                if message.isAIGenerated {
+                // AI-generated indicator (Story 6.7) - only for non-FAQ AI messages
+                if message.isAIGenerated && !message.isFAQResponse {
                     Label("AI Response", systemImage: "sparkles")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
