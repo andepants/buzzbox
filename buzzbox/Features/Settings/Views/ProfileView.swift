@@ -66,8 +66,9 @@ struct ProfileView: View {
                     Text(viewModel.errorMessage ?? "Failed to upload profile picture.")
                 }
                 // Reload profile when currentUser changes (e.g., after login or profile update)
+                // Skip reload during active photo upload to prevent overwriting cache-busted URL
                 .onChange(of: authViewModel.currentUser) { _, newUser in
-                    if newUser != nil {
+                    if newUser != nil, viewModel.isUploadingPhoto == false {
                         viewModel.loadCurrentProfile()
                     }
                 }
@@ -132,6 +133,7 @@ struct ProfileView: View {
                         .scaledToFill()
                         .frame(width: 120, height: 120)
                         .clipShape(Circle())
+                        .id(photoURL) // Force SwiftUI view refresh when URL changes (cache-busting)
                 } else {
                     // Default placeholder
                     Image(systemName: "person.circle.fill")

@@ -435,6 +435,15 @@ final class MessageThreadViewModel {
             modelContext.insert(message)
             try? modelContext.save()
 
+            // Update conversation with new message (increments messageCountSinceAnalysis)
+            let convDescriptor = FetchDescriptor<ConversationEntity>(
+                predicate: #Predicate { $0.id == conversationID }
+            )
+            if let conversation = try? modelContext.fetch(convDescriptor).first {
+                conversation.updateWithMessage(message)
+                try? modelContext.save()
+            }
+
             // Determine if message is historical using timestamp comparison
             // Historical = message was sent BEFORE listener started
             // New = message was sent AFTER listener started

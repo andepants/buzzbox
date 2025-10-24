@@ -80,8 +80,9 @@ struct buzzboxApp: App {
                 await authViewModel.refreshAuthIfNeeded(lastActiveDate: lastActiveDate)
             }
 
+            // COMMENTED OUT: FCM token refresh (APNs/FCM disabled to prevent duplicate notifications)
             // Ensure FCM token is registered (helps with existing users)
-            appDelegate.refreshFCMToken()
+            // appDelegate.refreshFCMToken()
 
             lastActiveDate = Date()
 

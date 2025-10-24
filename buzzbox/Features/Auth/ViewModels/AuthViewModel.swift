@@ -425,8 +425,31 @@ final class AuthViewModel: ObservableObject {
     /// - Parameter modelContext: SwiftData ModelContext for clearing local data
     func logout(modelContext: ModelContext) async {
 
-        // CRITICAL: Complete cleanup BEFORE optimistic UI reset
-        // This ensures the next user starts with a completely clean slate
+        // OPTIMISTIC UI: Reset auth state IMMEDIATELY for instant navigation to LoginView
+        // This ensures user sees LoginView instantly while cleanup happens in background
+        isAuthenticated = false
+        currentUser = nil
+        email = ""
+        password = ""
+        confirmPassword = ""
+        displayName = ""
+        errorMessage = nil
+        showError = false
+        resetEmailSent = false
+        displayNameAvailability = .unknown
+        loginAttemptCount = 0
+
+        // Haptic feedback (immediate)
+        HapticFeedback.impact(.medium)
+
+        // VoiceOver announcement (immediate)
+        UIAccessibility.post(
+            notification: .screenChanged,
+            argument: "You have been logged out"
+        )
+
+        // BACKGROUND CLEANUP: Complete cleanup to ensure next user starts with clean slate
+        // These operations continue in the background after navigation
 
         // 1. Remove all Firebase listeners FIRST (prevents post-logout observer fires)
         await UserPresenceService.shared.removeAllListeners()
@@ -464,29 +487,6 @@ final class AuthViewModel: ObservableObject {
             KingfisherManager.shared.cache.clearMemoryCache()
             KingfisherManager.shared.cache.clearDiskCache()
         }.value
-
-        // OPTIMISTIC UI: Reset auth state AFTER cleanup for instant UI redirect
-        // This ensures user sees LoginView instantly
-        isAuthenticated = false
-        currentUser = nil
-        email = ""
-        password = ""
-        confirmPassword = ""
-        displayName = ""
-        errorMessage = nil
-        showError = false
-        resetEmailSent = false
-        displayNameAvailability = .unknown
-        loginAttemptCount = 0
-
-        // Haptic feedback (immediate, after cleanup)
-        HapticFeedback.impact(.medium)
-
-        // VoiceOver announcement (immediate)
-        UIAccessibility.post(
-            notification: .screenChanged,
-            argument: "You have been logged out"
-        )
     }
 
     /// Clear all SwiftData entities on logout

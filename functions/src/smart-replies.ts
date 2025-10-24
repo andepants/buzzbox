@@ -5,7 +5,7 @@
  * Advanced AI Capability: Context-Aware Smart Replies (10 points)
  *
  * Generates 3 reply options (short/medium/detailed) using:
- * - Conversation context (last 20 messages)
+ * - Full conversation context (up to 100 messages)
  * - Creator's writing style from Firestore
  * - GPT-4o-mini for speed (<3s target)
  *
@@ -134,11 +134,11 @@ export const generateSmartReplies = onCall<SmartReplyRequest>({
       messagePreview: messageText.substring(0, 50),
     });
 
-    // 1. Fetch recent messages from RTDB (last 20)
+    // 1. Fetch recent messages from RTDB (up to 100 for full context)
     const messagesSnapshot = await admin.database()
       .ref(`/messages/${conversationId}`)
       .orderByChild("timestamp")
-      .limitToLast(20)
+      .limitToLast(100)
       .once("value");
 
     const messages: Message[] = [];
@@ -152,7 +152,7 @@ export const generateSmartReplies = onCall<SmartReplyRequest>({
       });
     });
 
-    logger.info(`Retrieved ${messages.length} messages for context`);
+    logger.info(`Retrieved ${messages.length} messages for context (up to 100)`);
 
     // 2. Fetch creator profile from Firestore
     const profileDoc = await admin.firestore()
@@ -285,11 +285,11 @@ async function generateSingleReply(
   messageText: string,
   replyType: "short" | "funny" | "professional"
 ): Promise<string> {
-  // Fetch last 20 messages for context (or all if <20 exist)
+  // Fetch up to 100 messages for full conversation context
   const messagesSnapshot = await admin.database()
     .ref(`/messages/${conversationId}`)
     .orderByChild("timestamp")
-    .limitToLast(20)
+    .limitToLast(100)
     .once("value");
 
   const messages: Message[] = [];
@@ -303,8 +303,8 @@ async function generateSingleReply(
     });
   });
 
-  // Use all available messages if conversation has <20
-  logger.info(`Using ${messages.length} messages for context`);
+  // Use up to 100 messages for full conversation context
+  logger.info(`Using ${messages.length} messages for context (up to 100)`);
 
   // Fetch creator profile
   const profileDoc = await admin.firestore()

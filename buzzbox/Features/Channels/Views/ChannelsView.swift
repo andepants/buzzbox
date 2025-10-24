@@ -121,21 +121,8 @@ struct ChannelsView: View {
             }
         }
         .searchable(text: $searchText, prompt: "Search channels")
-        .navigationTitle("Channels")
         .navigationDestination(for: ConversationEntity.self) { channel in
             MessageThreadView(conversation: channel)
-        }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    Task {
-                        await viewModel?.syncConversations()
-                    }
-                } label: {
-                    Label("Sync", systemImage: "arrow.clockwise")
-                }
-                .disabled(viewModel?.isLoading ?? false)
-            }
         }
         .refreshable {
             await viewModel?.syncConversations()

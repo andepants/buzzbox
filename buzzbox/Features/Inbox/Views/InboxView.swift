@@ -87,23 +87,41 @@ struct InboxView: View {
     // MARK: - Body
 
     var body: some View {
-        List {
-            // Network status banner
-            if !networkMonitor.isConnected {
-                NetworkStatusBanner()
-            }
+        ZStack {
+            // Gradient background
+            LinearGradient(
+                colors: [
+                    Color.blue.opacity(0.03),
+                    Color.blue.opacity(0.08),
+                    Color.blue.opacity(0.05)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
 
-            // Conversations or empty state
-            if filteredConversations.isEmpty && searchText.isEmpty {
-                emptyStateView
-            } else if filteredConversations.isEmpty {
-                emptySearchView
-            } else {
-                conversationsList
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Network status banner
+                    if !networkMonitor.isConnected {
+                        NetworkStatusBanner()
+                    }
+
+                    // Conversations or empty state
+                    if filteredConversations.isEmpty && searchText.isEmpty {
+                        emptyStateView
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                    } else if filteredConversations.isEmpty {
+                        emptySearchView
+                            .frame(maxWidth: .infinity, minHeight: 300)
+                    } else {
+                        conversationsList
+                    }
+                }
+                .padding(.top, 8)
             }
         }
         .searchable(text: $searchText, prompt: "Search fan messages")
-        .navigationTitle("Inbox")
         .navigationDestination(for: ConversationEntity.self) { conversation in
             MessageThreadView(conversation: conversation)
         }
@@ -114,6 +132,11 @@ struct InboxView: View {
             setupViewModel()
             await viewModel?.startRealtimeListener()
             await startMessageListeners()
+
+            // 🆕 Analyze conversations when creator opens inbox (Story 6.11)
+            if authViewModel.currentUser?.isCreator == true {
+                await analyzeConversationsIfNeeded()
+            }
         }
         .onDisappear {
             viewModel?.stopRealtimeListener()
@@ -139,7 +162,6 @@ struct InboxView: View {
             systemImage: "tray",
             description: Text("Fan DM conversations will appear here.\nFans can message you from the app.")
         )
-        .listRowSeparator(.hidden)
     }
 
     private var emptySearchView: some View {
@@ -148,58 +170,47 @@ struct InboxView: View {
             systemImage: "magnifyingglass",
             description: Text("No conversations match '\(searchText)'")
         )
-        .listRowSeparator(.hidden)
     }
 
     private var conversationsList: some View {
-        ForEach(filteredConversations) { conversation in
-            NavigationLink(value: conversation) {
-                ConversationRowView(conversation: conversation)
-            }
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                Button(role: .destructive) {
-                    archiveConversation(conversation)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
+        LazyVStack(spacing: 8) {
+            ForEach(filteredConversations) { conversation in
+                NavigationLink(value: conversation) {
+                    ConversationRowView(conversation: conversation)
                 }
-            }
-            .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                Button {
-                    toggleUnread(conversation)
-                } label: {
-                    Label(
-                        conversation.unreadCount > 0 ? "Read" : "Unread",
-                        systemImage: conversation.unreadCount > 0 ? "envelope.open" : "envelope.badge"
-                    )
-                }
-                .tint(.blue)
-            }
-            .contextMenu {
-                Button {
-                    togglePin(conversation)
-                } label: {
-                    Label(
-                        conversation.isPinned ? "Unpin" : "Pin",
-                        systemImage: conversation.isPinned ? "pin.slash" : "pin"
-                    )
-                }
+                .buttonStyle(PlainButtonStyle())
+                .simultaneousGesture(
+                    TapGesture().onEnded { _ in
+                    }
+                )
+                .contextMenu {
+                    Button {
+                        togglePin(conversation)
+                    } label: {
+                        Label(
+                            conversation.isPinned ? "Unpin" : "Pin",
+                            systemImage: conversation.isPinned ? "pin.slash" : "pin"
+                        )
+                    }
 
-                Button {
-                    toggleUnread(conversation)
-                } label: {
-                    Label(
-                        conversation.unreadCount > 0 ? "Mark as Read" : "Mark as Unread",
-                        systemImage: "envelope.badge"
-                    )
-                }
+                    Button {
+                        toggleUnread(conversation)
+                    } label: {
+                        Label(
+                            conversation.unreadCount > 0 ? "Mark as Read" : "Mark as Unread",
+                            systemImage: "envelope.badge"
+                        )
+                    }
 
-                Button {
-                    archiveConversation(conversation)
-                } label: {
-                    Label("Archive", systemImage: "archivebox")
+                    Button {
+                        archiveConversation(conversation)
+                    } label: {
+                        Label("Archive", systemImage: "archivebox")
+                    }
                 }
             }
         }
+        .padding(.bottom, 16)
     }
 
     // MARK: - Helper Methods
@@ -208,6 +219,42 @@ struct InboxView: View {
         if viewModel == nil {
             viewModel = ConversationViewModel(modelContext: modelContext)
         }
+    }
+
+    /// 🆕 Story 6.11: Analyze conversations when creator opens inbox
+    /// Only analyzes conversations with new messages since last analysis
+    private func analyzeConversationsIfNeeded() async {
+        print("\n🔵 [INBOX-ANALYSIS] Starting analysis check...")
+        print("🔵 [INBOX-ANALYSIS] Current user isCreator: \(authViewModel.currentUser?.isCreator == true)")
+        print("🔵 [INBOX-ANALYSIS] Total DM conversations: \(dmConversations.count)")
+
+        // Get conversations that need analysis:
+        // 1. Has new messages since last analysis (messageCountSinceAnalysis > 0), OR
+        // 2. Has never been analyzed before (aiAnalyzedAt == nil)
+        let conversationsToAnalyze = dmConversations.filter {
+            $0.messageCountSinceAnalysis > 0 || $0.aiAnalyzedAt == nil
+        }
+
+        print("🔵 [INBOX-ANALYSIS] Conversations needing analysis: \(conversationsToAnalyze.count)")
+
+        // Log each conversation's state (limit to first 5 to avoid spam)
+        for conv in dmConversations.prefix(5) {
+            print("🔵 [INBOX-ANALYSIS] Conv \(conv.id.prefix(8)): messageCount=\(conv.messageCountSinceAnalysis), category=\(conv.aiCategory ?? "nil"), sentiment=\(conv.aiSentiment ?? "nil"), score=\(conv.aiBusinessScore?.description ?? "nil")")
+        }
+
+        guard !conversationsToAnalyze.isEmpty else {
+            print("🔴 [INBOX-ANALYSIS] No conversations need analysis - SKIPPING\n")
+            return
+        }
+
+        print("✅ [INBOX-ANALYSIS] Analyzing \(conversationsToAnalyze.count) conversations...")
+
+        await ConversationAnalysisService.shared.analyzeAllConversations(conversationsToAnalyze)
+
+        // Save context after analysis updates
+        try? modelContext.save()
+
+        print("✅ [INBOX-ANALYSIS] Analysis complete\n")
     }
 
     private func archiveConversation(_ conversation: ConversationEntity) {

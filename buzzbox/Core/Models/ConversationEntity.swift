@@ -140,8 +140,9 @@ final class ConversationEntity {
         self.messages = []
 
         // AI Conversation Analysis (Story 6.11)
-        self.aiSentiment = nil
-        self.aiCategory = nil
+        // Default to neutral sentiment and fan category for new conversations
+        self.aiSentiment = "neutral"
+        self.aiCategory = "fan"
         self.aiBusinessScore = nil
         self.aiAnalyzedAt = nil
         self.messageCountSinceAnalysis = 0
@@ -158,6 +159,7 @@ final class ConversationEntity {
 
         // 🆕 Story 6.11: Increment message count for AI analysis triggering
         self.messageCountSinceAnalysis += 1
+        print("📊 [ENTITY] Message count incremented for conv \(self.id.prefix(8)): \(self.messageCountSinceAnalysis)")
     }
 
     /// Increment unread count

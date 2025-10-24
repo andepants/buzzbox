@@ -52,7 +52,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         // ✅ CRITICAL FIX: Set delegates HERE (after Firebase.configure())
         // This prevents crashes from delegates firing before Firebase is ready
         UNUserNotificationCenter.current().delegate = self
-        Messaging.messaging().delegate = self
+        // COMMENTED OUT: APNs/FCM delegate (causing duplicate notifications)
+        // Messaging.messaging().delegate = self
 
         print("🔔 [APP DELEGATE] Notification delegates set (after Firebase configuration)")
 
@@ -76,8 +77,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             }
         }
 
+        // COMMENTED OUT: APNs registration (causing duplicate notifications)
         // Register for remote notifications
-        application.registerForRemoteNotifications()
+        // application.registerForRemoteNotifications()
     }
 
     /// Logs current notification permission status for debugging
@@ -98,8 +100,9 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         print("    └─ Banner: \(settings.notificationCenterSetting.description)")
     }
 
-    // MARK: - FCM Token Handling
+    // MARK: - FCM Token Handling (COMMENTED OUT - Causing duplicate notifications)
 
+    /*
     /// Called when APNs token is registered
     func application(
         _ application: UIApplication,
@@ -178,6 +181,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             print("❌ [FCM TOKEN] Failed to save: \(error.localizedDescription)")
         }
     }
+    */
 
     // MARK: - UNUserNotificationCenterDelegate
 
@@ -208,6 +212,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         print("    └─ Timestamp: \(timestamp)")
         print("    └─ UserInfo keys: \(userInfo.keys.map { String(describing: $0) }.joined(separator: ", "))")
 
+        // COMMENTED OUT: FCM analytics tracking (APNs/FCM disabled)
+        /*
         // Check if this is an FCM notification
         if let messageID = userInfo["gcm.message_id"] as? String {
             print("    └─ FCM MessageID: \(messageID)")
@@ -218,6 +224,8 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         } else {
             print("    └─ Source: Local Notification (UNUserNotificationCenter)")
         }
+        */
+        print("    └─ Source: Local Notification (UNUserNotificationCenter)")
 
         // ALWAYS show notification in foreground with banner, sound, and badge
         // This ensures consistent notification delivery regardless of app state or screen

@@ -120,15 +120,47 @@ struct ConversationRowView: View {
                     }
                 }
             }
+
+            // Chevron arrow
+            Image(systemName: "chevron.right")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.5))
         }
-        .padding(.vertical, 8)
-        // 🆕 Sentiment border (Story 6.11)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(sentimentBorderColor, lineWidth: sentimentBorderWidth)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // 🆕 Sentiment border layer (Story 6.11)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(sentimentBorderColor, lineWidth: sentimentBorderWidth)
         )
+        // Main gradient border
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.3),
+                            Color.white.opacity(0.1)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
         // 🆕 Spam opacity (Story 6.11)
         .opacity(conversation.aiCategory == "spam" ? 0.5 : 1.0)
+        .onAppear {
+            // 🆕 Debug logging for AI features (Story 6.11)
+            print("🎨 [ROW] Conv \(conversation.id.prefix(8)) appeared:")
+            print("    └─ Sentiment: \(conversation.aiSentiment ?? "nil") (border: \(sentimentBorderColor), width: \(sentimentBorderWidth))")
+            print("    └─ Category: \(conversation.aiCategory ?? "nil")")
+            print("    └─ Business Score: \(conversation.aiBusinessScore?.description ?? "nil")")
+            print("    └─ Message Count Since Analysis: \(conversation.messageCountSinceAnalysis)")
+        }
         .task {
             await loadRecipientAndPresence()
         }
@@ -275,7 +307,9 @@ struct ConversationRowView: View {
     private func categoryDisplayText(for category: String) -> String {
         switch category {
         case "super_fan":
-            return "Super Fan"
+            return "S-fan"
+        case "business":
+            return "Biz"
         default:
             return category.capitalized
         }

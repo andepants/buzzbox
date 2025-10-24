@@ -306,8 +306,6 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Buzzbox needs camera access to take profile pictures and send photos in messages.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Buzzbox needs photo library access to select and share images in conversations.";
 				INFOPLIST_KEY_NSUserNotificationsUsageDescription = "Buzzbox sends you notifications for new messages and conversation updates.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -342,8 +340,6 @@
 				INFOPLIST_KEY_NSCameraUsageDescription = "Buzzbox needs camera access to take profile pictures and send photos in messages.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Buzzbox needs photo library access to select and share images in conversations.";
 				INFOPLIST_KEY_NSUserNotificationsUsageDescription = "Buzzbox sends you notifications for new messages and conversation updates.";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

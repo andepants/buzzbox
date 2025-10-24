@@ -63,6 +63,9 @@ final class ProfileViewModel {
     private var originalDisplayName: String = ""
     private var originalPhotoURL: URL?
 
+    /// Prevents photoURL state overwrite during active upload
+    var isUploadingPhoto: Bool = false
+
     // MARK: - Initialization
 
     /// Initialize ProfileViewModel with required AuthService and optional dependencies
@@ -88,6 +91,14 @@ final class ProfileViewModel {
     /// Load current user profile from AuthService
     func loadCurrentProfile() {
         guard let currentUser = authService.currentUser else {
+            return
+        }
+
+        // Don't reload photoURL during active upload to prevent overwriting cache-busted URL
+        guard !isUploadingPhoto else {
+            // Only update displayName during upload
+            displayName = currentUser.displayName
+            originalDisplayName = currentUser.displayName
             return
         }
 
@@ -156,7 +167,11 @@ final class ProfileViewModel {
     ///   - modelContext: SwiftData ModelContext for local persistence
     func uploadProfileImage(_ image: UIImage, modelContext: ModelContext) async {
         isUploading = true
-        defer { isUploading = false }
+        isUploadingPhoto = true
+        defer {
+            isUploading = false
+            isUploadingPhoto = false
+        }
 
         do {
             guard let userId = Auth.auth().currentUser?.uid else {
@@ -203,9 +218,6 @@ final class ProfileViewModel {
             // Update original photoURL to reflect saved state
             originalPhotoURL = downloadURL
             hasChanges = (displayName != originalDisplayName)
-
-            // Clear all Kingfisher caches to ensure fresh load
-            ImageCache.default.clearMemoryCache()
 
             // Success haptic feedback
             HapticFeedback.notification(.success)
