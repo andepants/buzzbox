@@ -108,7 +108,12 @@ final class ConversationService {
             id: id,
             participantIDs: conversationData["participantIDs"] as? [String] ?? [],
             displayName: nil,
+            groupPhotoURL: nil,
+            adminUserIDs: [],
             isGroup: false,
+            isCreatorOnly: false,
+            channelEmoji: nil,
+            channelDescription: nil,
             createdAt: Date(
                 timeIntervalSince1970: conversationData["createdAt"] as? TimeInterval ?? 0
             ),

@@ -110,6 +110,25 @@ struct MessageBubbleView: View {
                     .foregroundColor(textColor)
                     .cornerRadius(18)
 
+                // AI-generated indicator (Story 6.7)
+                if message.isAIGenerated {
+                    Label("AI Response", systemImage: "sparkles")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                // AI metadata badges (Story 6.7)
+                // Only show for messages FROM fans (viewed by creator)
+                if !isFromCurrentUser, let category = message.category {
+                    AIMetadataBadgeView(
+                        category: category,
+                        sentiment: message.sentiment,
+                        score: message.opportunityScore
+                    )
+                    .transition(.opacity.combined(with: .scale))
+                    .animation(.easeInOut(duration: 0.3), value: message.category)
+                }
+
                 // Timestamp + status
                 HStack(spacing: 4) {
                     // Use server timestamp if available, fallback to local

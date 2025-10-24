@@ -48,6 +48,16 @@ struct MessageThreadView: View {
     // Channel permission state
     @State private var canPost: Bool = true
 
+    // Smart reply state (Story 6.7)
+    @State private var showSmartReplies = false
+    @State private var smartReplyDrafts: [String] = []
+    @State private var isLoadingDrafts = false
+    @State private var errorMessage = ""
+    @State private var showError = false
+
+    // AI Service for smart replies (Story 6.7)
+    private let aiService = AIService()
+
     // MARK: - Initialization
 
     init(conversation: ConversationEntity) {
@@ -83,6 +93,12 @@ struct MessageThreadView: View {
     }
 
     // MARK: - Computed Properties
+
+    /// Check if current user is the creator (Story 6.7)
+    private var isCreator: Bool {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return false }
+        return currentUserID == Constants.CREATOR_UID
+    }
 
     /// Format typing indicator text for group conversations
     /// [Source: Story 3.5 - Group Typing Indicators, lines 415-430]
@@ -176,16 +192,39 @@ struct MessageThreadView: View {
 
             // Message input composer or read-only banner
             if canPost {
-                MessageComposerView(
-                    text: $messageText,
-                    characterLimit: 10_000,
-                    onSend: {
-                        await sendMessage()
+                HStack(spacing: 8) {
+                    // Draft Reply button (Story 6.7 - only for creator)
+                    if isCreator && !messages.isEmpty {
+                        Button {
+                            Task {
+                                await generateSmartReplies()
+                            }
+                        } label: {
+                            if isLoadingDrafts {
+                                ProgressView()
+                                    .frame(width: 24, height: 24)
+                            } else {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                        .disabled(isLoadingDrafts)
+                        .accessibilityLabel("Draft AI reply")
+                        .padding(.leading, 8)
                     }
-                )
-                .focused($isInputFocused)
-                .onChange(of: messageText) { oldValue, newValue in
-                    handleTypingChange(newValue)
+
+                    MessageComposerView(
+                        text: $messageText,
+                        characterLimit: 10_000,
+                        onSend: {
+                            await sendMessage()
+                        }
+                    )
+                    .focused($isInputFocused)
+                    .onChange(of: messageText) { oldValue, newValue in
+                        handleTypingChange(newValue)
+                    }
                 }
             } else {
                 // Read-only banner for creator-only channels
@@ -234,6 +273,24 @@ struct MessageThreadView: View {
             NavigationStack {
                 GroupInfoView(conversation: conversation)
             }
+        }
+        .sheet(isPresented: $showSmartReplies) {
+            SmartReplyPickerView(
+                drafts: smartReplyDrafts,
+                onSelect: { draft in
+                    messageText = draft
+                    showSmartReplies = false
+                },
+                onDismiss: {
+                    showSmartReplies = false
+                }
+            )
+            .presentationDetents([.medium, .large])
+        }
+        .alert("Error", isPresented: $showError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(errorMessage)
         }
         .task {
 
@@ -476,6 +533,39 @@ struct MessageThreadView: View {
                 conversationID: conversation.id,
                 userID: currentUserID
             )
+        }
+    }
+
+    // MARK: - Smart Reply Methods (Story 6.7)
+
+    /// Generate AI smart replies for the last message
+    /// Only available for creator
+    private func generateSmartReplies() async {
+        guard let lastMessage = messages.last else { return }
+
+        isLoadingDrafts = true
+        defer { isLoadingDrafts = false }
+
+        do {
+            smartReplyDrafts = try await aiService.generateSmartReplies(
+                conversationId: conversation.id,
+                messageText: lastMessage.text
+            )
+
+            // Validate response
+            guard smartReplyDrafts.count == 3,
+                  smartReplyDrafts.allSatisfy({ !$0.isEmpty }) else {
+                throw AIServiceError.smartReplyFailed(
+                    NSError(domain: "SmartReply", code: -1, userInfo: [
+                        NSLocalizedDescriptionKey: "Failed to generate complete replies"
+                    ])
+                )
+            }
+
+            showSmartReplies = true
+        } catch {
+            errorMessage = "Failed to generate AI replies. Please try again."
+            showError = true
         }
     }
 

@@ -21,3 +21,7 @@ firebase-debug.*.log
 
 # OS files
 .DS_Store
+
+# Environment variables (contains secrets)
+.env
+.env.local

@@ -4,8 +4,11 @@
  * onMessageCreated: Sends FCM notifications when messages are created
  * Supports both 1:1 and group conversations
  *
+ * processMessageAI: Auto-processes messages with AI (categorization, sentiment, scoring)
+ *
  * [Source: Story 2.0B - Cloud Functions FCM (foundation)]
  * [Source: Story 3.7 - Group Message Notifications]
+ * [Source: Story 6.2 - Auto-Processing Cloud Function]
  * [Updated: Using Firebase Functions v2 API per Context7 best practices]
  */
 
@@ -16,6 +19,14 @@ import * as admin from "firebase-admin";
 
 // Initialize Firebase Admin
 admin.initializeApp();
+
+// Export AI Processing functions
+export {processMessageAI} from "./ai-processing";
+export {checkFAQ} from "./faq";
+export {generateSmartReplies} from "./smart-replies";
+
+// Export Seed Data functions (QA testing only)
+export {seedFAQs, seedCreatorProfile} from "./seed-data";
 
 /**
  * Message data structure from RTDB
@@ -52,7 +63,6 @@ interface ConversationData {
 export const onMessageCreated = onValueCreated({
   ref: "/messages/{conversationID}/{messageID}",
   region: "us-central1",
-  instance: "buzzbox-91c9a-default-rtdb",
   retry: true, // Enable automatic retry on failure
 }, async (event) => {
   const message = event.data.val() as MessageData;
@@ -277,7 +287,7 @@ export const onMessageCreated = onValueCreated({
       });
     } catch (error) {
       // Detailed FCM error logging
-      const errorCode = (error as any).code;
+      const errorCode = error && typeof error === "object" && "code" in error ? error.code : undefined;
       const errorMessage = error instanceof Error ? error.message : String(error);
 
       logger.error("❌ Failed to send 1:1 DM notification", {

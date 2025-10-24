@@ -26,6 +26,7 @@ final class MessageThreadViewModel {
     private let conversationID: String
     private let modelContext: ModelContext
     private var messagesRef: DatabaseReference
+    private let aiService = AIService() // For FAQ auto-response
 
     private var childAddedHandle: DatabaseHandle?
     private var childChangedHandle: DatabaseHandle?
@@ -489,6 +490,16 @@ final class MessageThreadViewModel {
                     text: messageText,
                     conversationID: conversationID
                 )
+
+                // FAQ Auto-Response: Check if message is TO creator
+                // Only process if:
+                // 1. Message is from a fan (not from creator)
+                // 2. Message is TO the creator (receiverID == CREATOR_UID or DM to creator)
+                await checkAndRespondToFAQ(
+                    messageText: messageText,
+                    senderID: senderID,
+                    messageID: messageID
+                )
             } else {
                 if isFromCurrentUser {
                     print("    └─ ⏭️  Skipped: Message from current user (no self-notification)")
@@ -547,6 +558,40 @@ final class MessageThreadViewModel {
             existing.status = status
             try? modelContext.save()
         }
+
+        // Update AI metadata if present (Story 6.2: Auto-processing)
+        var aiMetadataUpdated = false
+
+        if let aiCategoryString = messageData["aiCategory"] as? String,
+           let category = MessageCategory(rawValue: aiCategoryString) {
+            existing.category = category
+            aiMetadataUpdated = true
+        }
+
+        if let aiSentimentString = messageData["aiSentiment"] as? String,
+           let sentiment = MessageSentiment(rawValue: aiSentimentString) {
+            existing.sentiment = sentiment
+            aiMetadataUpdated = true
+        }
+
+        if let aiOpportunityScore = messageData["aiOpportunityScore"] as? Int {
+            existing.opportunityScore = aiOpportunityScore
+            aiMetadataUpdated = true
+        }
+
+        if let aiProcessedAtMs = messageData["aiProcessedAt"] as? Double {
+            existing.aiProcessedAt = Date(timeIntervalSince1970: aiProcessedAtMs / 1000.0)
+            aiMetadataUpdated = true
+        }
+
+        if aiMetadataUpdated {
+            print("🤖 [AI METADATA] Message updated with AI metadata")
+            print("    └─ MessageID: \(messageID)")
+            print("    └─ Category: \(existing.category?.rawValue ?? "nil")")
+            print("    └─ Sentiment: \(existing.sentiment?.rawValue ?? "nil")")
+            print("    └─ OpportunityScore: \(existing.opportunityScore.map(String.init) ?? "nil")")
+            try? modelContext.save()
+        }
     }
 
     private func updateConversationLastMessage(text: String) async {
@@ -602,6 +647,128 @@ final class MessageThreadViewModel {
             return doc.data()?["displayName"] as? String ?? "Unknown User"
         } catch {
             return "Unknown User"
+        }
+    }
+
+    // MARK: - FAQ Auto-Response
+
+    /// Checks if message matches FAQ and auto-sends response
+    /// Story 6.3.5: FAQ Auto-Responder iOS Integration
+    /// Story 6.9: FAQ toggle integration
+    private func checkAndRespondToFAQ(
+        messageText: String,
+        senderID: String,
+        messageID: String
+    ) async {
+        // Check if FAQ auto-response is enabled in settings (Story 6.9)
+        // Default to true if not set (opt-out, not opt-in)
+        let faqEnabled = UserDefaults.standard.object(forKey: Constants.FAQ_AUTO_RESPONSE_ENABLED_KEY) as? Bool ?? true
+        guard faqEnabled else {
+            print("    └─ ⏭️  Skipped FAQ check: FAQ auto-response disabled in settings")
+            return
+        }
+
+        // Only check FAQs for messages TO the creator
+        // Skip if sender is the creator (prevents infinite loops)
+        guard senderID != Constants.CREATOR_UID else {
+            print("    └─ ⏭️  Skipped FAQ check: Message from creator")
+            return
+        }
+
+        // Get conversation to check if this is a DM with creator
+        let descriptor = FetchDescriptor<ConversationEntity>(
+            predicate: #Predicate { $0.id == conversationID }
+        )
+
+        guard let conversation = try? modelContext.fetch(descriptor).first else {
+            return
+        }
+
+        // Only process DMs or channels where creator is participant
+        let isCreatorInConversation = conversation.participantIDs.contains(Constants.CREATOR_UID)
+        guard isCreatorInConversation else {
+            print("    └─ ⏭️  Skipped FAQ check: Creator not in conversation")
+            return
+        }
+
+        print("    └─ 🤖 Checking FAQ for message: \(messageText.prefix(50))...")
+
+        do {
+            // Call FAQ Cloud Function
+            let faqResponse = try await aiService.checkFAQ(messageText)
+
+            // If FAQ matched, auto-send response
+            if faqResponse.isFAQ, let answer = faqResponse.answer {
+                print("    └─ ✅ FAQ matched! Auto-sending response...")
+                print("    └─ Matched Question: \(faqResponse.matchedQuestion ?? "Unknown")")
+
+                // Send FAQ answer as message FROM creator
+                await sendFAQResponse(
+                    answer: answer,
+                    recipientID: senderID
+                )
+            } else {
+                print("    └─ ℹ️  No FAQ match found")
+            }
+        } catch {
+            // Silent failure - don't disrupt user experience
+            print("    └─ ⚠️  FAQ check failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Sends FAQ response message from creator
+    private func sendFAQResponse(answer: String, recipientID: String) async {
+        let messageID = UUID().uuidString
+
+        print("📤 [FAQ AUTO-RESPONSE] Sending FAQ response")
+        print("    └─ MessageID: \(messageID)")
+        print("    └─ ConversationID: \(conversationID)")
+        print("    └─ RecipientID: \(recipientID)")
+        print("    └─ AnswerLength: \(answer.count) characters")
+
+        // Create message entity with isAIGenerated flag
+        let message = MessageEntity(
+            id: messageID,
+            conversationID: conversationID,
+            senderID: Constants.CREATOR_UID, // Response FROM creator
+            text: answer,
+            localCreatedAt: Date(),
+            status: .sending,
+            syncStatus: .pending
+        )
+        message.isAIGenerated = true // Mark as AI-generated FAQ response
+
+        modelContext.insert(message)
+        try? modelContext.save()
+
+        // Sync to RTDB
+        let messageData: [String: Any] = [
+            "id": messageID,
+            "text": answer,
+            "senderID": Constants.CREATOR_UID,
+            "receiverID": recipientID,
+            "conversationID": conversationID,
+            "status": "sent",
+            "serverTimestamp": ServerValue.timestamp(),
+            "isAIGenerated": true, // Mark in RTDB as well
+        ]
+
+        do {
+            try await messagesRef.child(messageID).setValue(messageData)
+
+            // Mark as synced
+            message.markAsSynced()
+            message.status = .sent
+            try? modelContext.save()
+
+            // Update conversation last message
+            await updateConversationLastMessage(text: answer)
+
+            print("✅ [FAQ AUTO-RESPONSE] FAQ response sent successfully")
+        } catch {
+            print("❌ [FAQ AUTO-RESPONSE] Failed to send: \(error.localizedDescription)")
+            message.markAsFailed(error: error.localizedDescription)
+            try? modelContext.save()
         }
     }
 

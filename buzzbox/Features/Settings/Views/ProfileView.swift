@@ -43,6 +43,11 @@ struct ProfileView: View {
 
                             accountInfoSection(viewModel: viewModel)
 
+                            // AI Settings link (Story 6.9)
+                            if authViewModel.currentUser?.isCreator == true {
+                                aiSettingsLink
+                            }
+
                             Spacer()
 
                             logoutButton
@@ -276,6 +281,53 @@ struct ProfileView: View {
             )
             .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
         }
+        .padding(.horizontal)
+    }
+
+    // MARK: - AI Settings Link (Story 6.9)
+
+    private var aiSettingsLink: some View {
+        NavigationLink {
+            AISettingsView()
+        } label: {
+            HStack {
+                Label {
+                    Text("AI Settings")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .fontWeight(.medium)
+                } icon: {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.blue)
+                        .frame(width: 20)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.3),
+                                Color.white.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
         .padding(.horizontal)
     }
 
