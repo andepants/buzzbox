@@ -46,6 +46,9 @@ struct ProfileView: View {
                             // AI Settings link (Story 6.9)
                             if authViewModel.currentUser?.isCreator == true {
                                 aiSettingsLink
+
+                                // Data Seeding Tool (Development)
+                                dataSeedingLink
                             }
 
                             Spacer()
@@ -301,6 +304,53 @@ struct ProfileView: View {
                 } icon: {
                     Image(systemName: "sparkles")
                         .foregroundColor(.blue)
+                        .frame(width: 20)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.3),
+                                Color.white.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal)
+    }
+
+    // MARK: - Data Seeding Link (Development)
+
+    private var dataSeedingLink: some View {
+        NavigationLink {
+            DataSeedingView()
+        } label: {
+            HStack {
+                Label {
+                    Text("Seed Test Data")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                        .fontWeight(.medium)
+                } icon: {
+                    Image(systemName: "leaf.fill")
+                        .foregroundColor(.green)
                         .frame(width: 20)
                 }
 

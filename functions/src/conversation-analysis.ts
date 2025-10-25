@@ -303,18 +303,37 @@ async function scoreConversationOpportunity(
         role: "system",
         content: `Score this business collaboration opportunity from 0-10 based on the ENTIRE conversation.
 
-Scoring criteria for a tech content creator:
-- 8-10: High-value partnership (known brand, clear budget, strong fit, serious engagement)
-- 5-7: Moderate opportunity (legitimate, needs vetting, shows promise)
-- 2-4: Low-value (generic pitch, unclear value, minimal engagement)
-- 0-1: Not a real opportunity (spam, completely generic outreach)
+USE THE FULL 0-10 SCALE. Don't be conservative - differentiate clearly between tiers.
 
-Consider:
-- Conversation depth and engagement level
-- Specificity of the opportunity (vague vs detailed)
-- Brand alignment with tech content
-- Professionalism and legitimacy
-- Follow-through in conversation
+Scoring criteria for a tech content creator:
+
+10: Dream partnership (Apple, Google, Microsoft-level brand + specific proposal + clear budget $50k+)
+9: Top-tier opportunity (well-known brand like Stripe, Vercel + detailed proposal + confirmed budget)
+8: Strong partnership (recognized brand + specific deliverables + budget mentioned + serious engagement)
+
+7: Good opportunity (legitimate company + clear project scope + shows real interest + multiple touchpoints)
+6: Solid lead (real business + specific ask + professional approach + some budget indication)
+5: Moderate potential (legitimate inquiry + somewhat specific + needs more vetting)
+
+4: Weak lead (generic pitch + vague details + minimal personalization + unclear budget)
+3: Low-value (very generic + no specifics + copy-paste feel + no engagement)
+2: Barely relevant (mostly spam-like + irrelevant + unprofessional)
+1: Definite spam (pure spam + phishing + scam indicators)
+0: Complete garbage (offensive, abusive, or completely irrelevant)
+
+Key factors to consider:
+- Brand recognition and reputation (known brands = higher score)
+- Budget clarity (specific numbers mentioned = higher score)
+- Specificity of ask (detailed proposals = higher score)
+- Conversation depth (back-and-forth engagement = higher score)
+- Professionalism and personalization (shows research = higher score)
+- Timeline and urgency (clear deadlines = moderate impact)
+
+Examples:
+- "Hey, love your content! We're Vercel and want to sponsor your next video for $10k" → 9-10
+- "I'm from Acme Corp (Series B startup). We need a tutorial on our API. Budget is $5k. When can we chat?" → 7-8
+- "Our company wants to collaborate. Let me know if interested." → 4-5
+- "Make money fast! Click here!" → 0-1
 
 Respond with ONLY a number from 0-10.`,
       },
@@ -323,7 +342,7 @@ Respond with ONLY a number from 0-10.`,
         content: conversationContext,
       },
     ],
-    temperature: 0.5,
+    temperature: 0.7,
     max_tokens: 10,
   });
 
