@@ -17,6 +17,8 @@ struct ProfileView: View {
     @State private var viewModel: ProfileViewModel?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(AppearanceSettings.self) var appearanceSettings
     @EnvironmentObject var authViewModel: AuthViewModel
 
     // MARK: - Body
@@ -42,6 +44,8 @@ struct ProfileView: View {
                             profilePictureSection(viewModel: viewModel)
 
                             accountInfoSection(viewModel: viewModel)
+
+                            displaySection
 
                             // AI Settings link (Story 6.9)
                             if authViewModel.currentUser?.isCreator == true {
@@ -287,6 +291,61 @@ struct ProfileView: View {
             .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
         }
         .padding(.horizontal)
+    }
+
+    // MARK: - Display Section (Story 8.5)
+
+    private var displaySection: some View {
+        @Bindable var settings = appearanceSettings
+
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("Display")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(.primary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                // Appearance Mode Picker
+                Picker("Appearance", selection: $settings.mode) {
+                    ForEach(AppearanceMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                // Subtitle for system mode
+                if appearanceSettings.mode == .system {
+                    Text("Automatically adjusts to your system settings")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.3),
+                                Color.white.opacity(0.1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color(.systemGray4).opacity(0.3), radius: 8, x: 0, y: 4)
+
+            Text("Choose how BuzzBox looks on your device")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 4)
+        }
+        .padding(.horizontal)
+        .animation(.easeInOut(duration: 0.2), value: appearanceSettings.mode)
     }
 
     // MARK: - AI Settings Link (Story 6.9)

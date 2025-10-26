@@ -88,7 +88,7 @@ struct ChannelCardView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .overlay(
             RoundedRectangle(cornerRadius: 16)
@@ -104,7 +104,7 @@ struct ChannelCardView: View {
                     lineWidth: 1
                 )
         )
-        .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 4)
+        .shadow(color: Color(.systemGray4).opacity(0.3), radius: 8, x: 0, y: 4)
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
     }

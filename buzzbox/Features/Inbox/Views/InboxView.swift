@@ -36,6 +36,7 @@ struct InboxView: View {
 
     @State private var viewModel: ConversationViewModel?
     @State private var searchText = ""
+    @State private var selectedCategory: AICategory = .all
 
     // MARK: - Message Listener Properties
 
@@ -60,13 +61,14 @@ struct InboxView: View {
         dmConversations.reduce(0) { $0 + $1.unreadCount }
     }
 
-    /// Filtered conversations based on search text, sorted by pinned status
+    /// Filtered conversations based on search text and AI category, sorted by pinned status
     var filteredConversations: [ConversationEntity] {
-        let filtered: [ConversationEntity]
+        // Step 1: Apply search filter
+        let searchFiltered: [ConversationEntity]
         if searchText.isEmpty {
-            filtered = Array(dmConversations)
+            searchFiltered = Array(dmConversations)
         } else {
-            filtered = dmConversations.filter { conversation in
+            searchFiltered = dmConversations.filter { conversation in
                 if let lastMessage = conversation.lastMessageText,
                    lastMessage.localizedCaseInsensitiveContains(searchText) {
                     return true
@@ -75,13 +77,43 @@ struct InboxView: View {
             }
         }
 
+        // Step 2: Apply category filter with nil handling
+        let categoryFiltered: [ConversationEntity]
+        if selectedCategory == .all {
+            categoryFiltered = searchFiltered
+        } else {
+            categoryFiltered = searchFiltered.filter { conversation in
+                guard let category = conversation.aiCategory else { return false }
+                guard let validCategory = AICategory.validate(category) else { return false }
+                return validCategory == selectedCategory
+            }
+        }
+
         // Sort by pinned status first, then by updatedAt
-        return filtered.sorted { lhs, rhs in
+        return categoryFiltered.sorted { lhs, rhs in
             if lhs.isPinned != rhs.isPinned {
                 return lhs.isPinned // Pinned items first
             }
             return lhs.updatedAt > rhs.updatedAt // Then by most recent
         }
+    }
+
+    /// Count of conversations per AI category
+    var categoryCounts: [AICategory: Int] {
+        var counts: [AICategory: Int] = [:]
+
+        for category in AICategory.allCases {
+            if category == .all {
+                counts[category] = dmConversations.count
+            } else {
+                counts[category] = dmConversations.filter { conversation in
+                    guard let cat = conversation.aiCategory else { return false }
+                    return AICategory.validate(cat) == category
+                }.count
+            }
+        }
+
+        return counts
     }
 
     // MARK: - Body
@@ -100,25 +132,50 @@ struct InboxView: View {
             )
             .ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 16) {
-                    // Network status banner
-                    if !networkMonitor.isConnected {
-                        NetworkStatusBanner()
+            VStack(spacing: 0) {
+                // Filter Chips (Story 8.6)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(AICategory.allCases, id: \.self) { category in
+                            FilterChipView(
+                                category: category,
+                                count: categoryCounts[category] ?? 0,
+                                isSelected: selectedCategory == category
+                            ) {
+                                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                                    selectedCategory = category
+                                }
+                            }
+                        }
                     }
-
-                    // Conversations or empty state
-                    if filteredConversations.isEmpty && searchText.isEmpty {
-                        emptyStateView
-                            .frame(maxWidth: .infinity, minHeight: 300)
-                    } else if filteredConversations.isEmpty {
-                        emptySearchView
-                            .frame(maxWidth: .infinity, minHeight: 300)
-                    } else {
-                        conversationsList
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
-                .padding(.top, 8)
+                .background(Color(.systemGroupedBackground))
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Network status banner
+                        if !networkMonitor.isConnected {
+                            NetworkStatusBanner()
+                        }
+
+                        // Conversations or empty state
+                        if filteredConversations.isEmpty && searchText.isEmpty && selectedCategory != .all {
+                            emptyFilterState
+                                .frame(maxWidth: .infinity, minHeight: 300)
+                        } else if filteredConversations.isEmpty && searchText.isEmpty {
+                            emptyStateView
+                                .frame(maxWidth: .infinity, minHeight: 300)
+                        } else if filteredConversations.isEmpty {
+                            emptySearchView
+                                .frame(maxWidth: .infinity, minHeight: 300)
+                        } else {
+                            conversationsList
+                        }
+                    }
+                    .padding(.top, 8)
+                }
             }
         }
         .searchable(text: $searchText, prompt: "Search fan messages")
@@ -169,6 +226,14 @@ struct InboxView: View {
             "No Results",
             systemImage: "magnifyingglass",
             description: Text("No conversations match '\(searchText)'")
+        )
+    }
+
+    private var emptyFilterState: some View {
+        ContentUnavailableView(
+            "No \(selectedCategory.displayName.lowercased()) conversations",
+            systemImage: selectedCategory.icon,
+            description: Text("Try selecting a different category")
         )
     }
 

@@ -122,7 +122,7 @@ struct FloatingFABView: View {
             }
         }
         .padding(.horizontal)
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
         .alert("Error", isPresented: $showError) {
             Button("OK", role: .cancel) {
                 // Alert dismisses automatically
@@ -150,11 +150,11 @@ struct FloatingFABView: View {
             ZStack {
                 Circle()
                     .fill(Color.blue.gradient)
-                    .frame(width: 48, height: 48)
-                    .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+                    .frame(width: 36, height: 36)
+                    .shadow(color: Color(.systemGray4).opacity(0.3), radius: 8, x: 0, y: 4)
 
                 Image(systemName: isExpanded ? "xmark" : "sparkles")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.white)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
             }
@@ -178,8 +178,8 @@ struct FloatingFABView: View {
                 ZStack {
                     Circle()
                         .fill(type.color.gradient)
-                        .frame(width: 40, height: 40)
-                        .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 3)
+                        .frame(width: 32, height: 32)
+                        .shadow(color: Color(.systemGray4).opacity(0.3), radius: 6, x: 0, y: 3)
 
                     if loadingType == type {
                         ProgressView()
@@ -187,13 +187,13 @@ struct FloatingFABView: View {
                             .accessibilityLabel("Generating reply")
                     } else {
                         Image(systemName: type.icon)
-                            .font(.system(size: 18, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.white)
                     }
                 }
 
                 Text(type.label)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 8, weight: .medium))
                     .foregroundStyle(type.color)
             }
         }

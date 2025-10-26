@@ -128,7 +128,7 @@ struct ConversationRowView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .background(Color.white)
+        .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         // 🆕 Sentiment border layer (Story 6.11)
         .overlay(
@@ -150,7 +150,7 @@ struct ConversationRowView: View {
                     lineWidth: 1
                 )
         )
-        .shadow(color: Color.black.opacity(0.05), radius: 8, x: 0, y: 4)
+        .shadow(color: Color(.systemGray4).opacity(0.3), radius: 8, x: 0, y: 4)
         // 🆕 Spam opacity (Story 6.11)
         .opacity(conversation.aiCategory == "spam" ? 0.5 : 1.0)
         .onAppear {

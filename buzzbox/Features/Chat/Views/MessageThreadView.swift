@@ -163,6 +163,7 @@ struct MessageThreadView: View {
                         }
                     }
                     .padding()
+                    .padding(.bottom, 70)
                 }
                 .onAppear {
                     scrollToBottom(proxy: proxy)
@@ -193,42 +194,52 @@ struct MessageThreadView: View {
             // Message input composer or read-only banner
             if canPost {
                 VStack(spacing: 0) {
-                    // FAB buttons (Story 6.10 - only for creator)
+                    // AI Bar with full-width blur background (Story 6.10)
                     if isCreator && !messages.isEmpty {
-                        FloatingFABView(
-                            onReplyGenerated: { draft in
-                                messageText = draft
-                                isInputFocused = true
-                            },
-                            generateReply: { type in
-                                // Check cache first (Story 6.10: Smart Replies Caching)
-                                if let lastMessage = messages.last,
-                                   lastMessage.hasValidSmartRepliesCache {
-                                    // Return cached reply based on type
-                                    switch type {
-                                    case .short:
-                                        if let cached = lastMessage.smartReplyShort {
-                                            return cached
-                                        }
-                                    case .funny:
-                                        if let cached = lastMessage.smartReplyMedium {
-                                            return cached
-                                        }
-                                    case .professional:
-                                        if let cached = lastMessage.smartReplyDetailed {
-                                            return cached
+                        ZStack {
+                            // Full-width white background
+                            Rectangle()
+                                .fill(Color.white)
+                                .frame(height: 56)
+
+                            // FAB buttons centered
+                            FloatingFABView(
+                                onReplyGenerated: { draft in
+                                    messageText = draft
+                                    isInputFocused = true
+                                },
+                                generateReply: { type in
+                                    // Check cache first (Story 6.10: Smart Replies Caching)
+                                    if let lastMessage = messages.last,
+                                       lastMessage.hasValidSmartRepliesCache {
+                                        // Return cached reply based on type
+                                        switch type {
+                                        case .short:
+                                            if let cached = lastMessage.smartReplyShort {
+                                                return cached
+                                            }
+                                        case .funny:
+                                            if let cached = lastMessage.smartReplyMedium {
+                                                return cached
+                                            }
+                                        case .professional:
+                                            if let cached = lastMessage.smartReplyDetailed {
+                                                return cached
+                                            }
                                         }
                                     }
-                                }
 
-                                // Cache miss - generate new reply
-                                return try await aiService.generateSingleSmartReply(
-                                    conversationId: conversation.id,
-                                    messageText: messages.last?.text ?? "",
-                                    replyType: type.rawValue
-                                )
-                            }
-                        )
+                                    // Cache miss - generate new reply
+                                    return try await aiService.generateSingleSmartReply(
+                                        conversationId: conversation.id,
+                                        messageText: messages.last?.text ?? "",
+                                        replyType: type.rawValue
+                                    )
+                                }
+                            )
+                            .padding(.vertical, 8)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
 
                     // Message input composer

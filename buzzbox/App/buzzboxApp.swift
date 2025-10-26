@@ -26,6 +26,7 @@ struct buzzboxApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var lastActiveDate = Date()
     @State private var showPrivacyOverlay = false
+    @State private var appearanceSettings = AppearanceSettings()
     @StateObject private var authViewModel = AuthViewModel()
     @StateObject private var networkMonitor = NetworkMonitor.shared
 
@@ -50,6 +51,8 @@ struct buzzboxApp: App {
         WindowGroup {
             ZStack {
                 RootView()
+                    .preferredColorScheme(appearanceSettings.mode.colorScheme)
+                    .environment(appearanceSettings)
                     .environmentObject(authViewModel)
                     .environmentObject(networkMonitor)
 
