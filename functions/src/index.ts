@@ -27,6 +27,9 @@ export {checkFAQ} from "./faq";
 export {generateSmartReplies} from "./smart-replies";
 export {analyzeConversation} from "./conversation-analysis";
 
+// Export Supermemory functions (Epic 9 - RAG Integration)
+export {addSupermemoryMemory, searchSupermemoryMemories} from "./supermemory";
+
 // Export Seed Data functions (QA testing only)
 export {seedFAQs, seedCreatorProfile} from "./seed-data";
 
@@ -788,6 +791,7 @@ export const onMessageCreated = onValueCreated({
           .update({
             lastMessage: faqResult.answer.substring(0, 100),
             lastMessageTimestamp: admin.database.ServerValue.TIMESTAMP,
+            updatedAt: admin.database.ServerValue.TIMESTAMP,
           });
 
         const updateDuration = Date.now() - updateStart;

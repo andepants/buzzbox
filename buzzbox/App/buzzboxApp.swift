@@ -65,6 +65,12 @@ struct buzzboxApp: App {
             .onChange(of: scenePhase) { _, newPhase in
                 handleScenePhaseChange(newPhase)
             }
+            .onAppear {
+                // Configure SupermemoryService with ModelContext (Story 9.4)
+                SupermemoryService.shared.configure(
+                    modelContext: AppContainer.shared.mainContext
+                )
+            }
         }
     }
 
@@ -81,6 +87,11 @@ struct buzzboxApp: App {
             // Refresh auth token if needed (if > 1 hour in background)
             Task {
                 await authViewModel.refreshAuthIfNeeded(lastActiveDate: lastActiveDate)
+            }
+
+            // Process pending Supermemory memories (Story 9.4)
+            Task {
+                await SupermemoryService.shared.processPendingMemories()
             }
 
             // COMMENTED OUT: FCM token refresh (APNs/FCM disabled to prevent duplicate notifications)

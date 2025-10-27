@@ -182,6 +182,9 @@ final class MessageThreadViewModel {
                 message.status = .delivered
                 try? modelContext.save()
 
+                // Store Q&A pair in Supermemory (Story 9.2 - RAG Integration)
+                await storeReplyInSupermemory(andrewReply: text, conversationID: conversationID)
+
                 // Update conversation last message
                 await updateConversationLastMessage(text: text)
 
@@ -708,7 +711,8 @@ final class MessageThreadViewModel {
 
         try? await conversationRef.updateChildValues([
             "lastMessage": text,
-            "lastMessageTimestamp": ServerValue.timestamp()
+            "lastMessageTimestamp": ServerValue.timestamp(),
+            "updatedAt": ServerValue.timestamp()
         ])
     }
 
@@ -757,6 +761,82 @@ final class MessageThreadViewModel {
         } catch {
             return "Unknown User"
         }
+    }
+
+    // MARK: - Supermemory Integration
+
+    /// Stores Andrew's manual reply as a Q&A pair in Supermemory
+    /// Fire-and-forget pattern: doesn't block message sending
+    /// [Source: Story 9.2 - Memory Storage on Manual Replies]
+    private func storeReplyInSupermemory(andrewReply: String, conversationID: String) async {
+        // Only for creator replies
+        guard let currentUserEmail = Auth.auth().currentUser?.email else { return }
+        guard currentUserEmail.lowercased() == CREATOR_EMAIL.lowercased() else { return }
+
+        // Only if Supermemory is enabled
+        guard SupermemoryService.shared.isEnabled else { return }
+
+        // Validate inputs
+        guard !andrewReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        // Get last fan message
+        guard let fanMessage = getLastFanMessage() else {
+            print("⚠️ [SUPERMEMORY] No fan message found to create Q&A pair")
+            return
+        }
+
+        // Format Q&A pair
+        let qaPair = """
+        Q: \(fanMessage.text)
+        A: \(andrewReply)
+        """
+
+        // Get conversation metadata
+        let descriptor = FetchDescriptor<ConversationEntity>(
+            predicate: #Predicate { $0.id == conversationID }
+        )
+        let conversation = try? modelContext.fetch(descriptor).first
+
+        // Build metadata
+        let metadata: [String: String] = [
+            "conversationID": conversationID,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "category": conversation?.aiCategory ?? "unknown",
+            "platform": "ios",
+            "creator": "andrew"
+        ]
+
+        // Store in background (fire-and-forget)
+        Task.detached(priority: .background) {
+            do {
+                try await SupermemoryService.shared.addMemory(
+                    content: qaPair,
+                    metadata: metadata
+                )
+                print("✅ [SUPERMEMORY] Stored reply as Q&A pair")
+            } catch {
+                print("⚠️ [SUPERMEMORY] Failed to store reply: \(error.localizedDescription)")
+                // Don't propagate error - graceful degradation
+            }
+        }
+    }
+
+    /// Gets the most recent message from a fan (non-creator)
+    private func getLastFanMessage() -> MessageEntity? {
+        guard let currentUserID = Auth.auth().currentUser?.uid else { return nil }
+
+        let descriptor = FetchDescriptor<MessageEntity>(
+            predicate: #Predicate { message in
+                message.conversationID == conversationID &&
+                message.senderID != currentUserID
+            },
+            sortBy: [SortDescriptor(\.localCreatedAt, order: .reverse)]
+        )
+
+        let messages = try? modelContext.fetch(descriptor)
+        return messages?.first
     }
 
     // MARK: - FAQ Auto-Response

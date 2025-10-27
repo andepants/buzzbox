@@ -32,7 +32,8 @@ final class AppContainer {
             ConversationEntity.self,
             UserEntity.self,
             AttachmentEntity.self,
-            FAQEntity.self
+            FAQEntity.self,
+            PendingMemory.self
         ])
 
         let modelConfiguration = ModelConfiguration(

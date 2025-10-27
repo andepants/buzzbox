@@ -72,20 +72,37 @@ final class AIService {
     // MARK: - Context-Aware Smart Replies (Feature 2 + Advanced)
 
     /// Generate 3 context-aware smart replies in creator's voice
+    /// Enhanced with RAG (Retrieval-Augmented Generation) from Supermemory
     /// - Parameters:
     ///   - conversationId: ID of the conversation for context
     ///   - messageText: The message to generate replies for
     /// - Returns: Array of 3 reply drafts (short, medium, detailed)
+    /// [Source: Story 9.3 - RAG-Enhanced AI Drafts]
     nonisolated func generateSmartReplies(
         conversationId: String,
         messageText: String
     ) async throws -> [String] {
+        // Step 1: Search Supermemory for relevant past conversations (RAG)
+        let ragContext = await fetchRAGContext(for: messageText)
+
         do {
+            // Step 2: Call Cloud Function with optional RAG context
             let callable = functions.httpsCallable("generateSmartReplies")
-            let result = try await callable.call([
+
+            var params: [String: Any] = [
                 "conversationId": conversationId,
                 "messageText": messageText
-            ])
+            ]
+
+            // Include RAG context if available
+            if let ragContext = ragContext {
+                params["ragContext"] = ragContext
+                print("✅ [RAG] Using memory context for AI draft")
+            } else {
+                print("ℹ️ [RAG] Generating AI draft without memory context")
+            }
+
+            let result = try await callable.call(params)
 
             let data = try JSONSerialization.data(withJSONObject: result.data)
             let decoder = JSONDecoder()
@@ -136,6 +153,48 @@ final class AIService {
             throw AIServiceError.smartReplyFailed(error)
         }
     }
+    // MARK: - RAG Context Enhancement
+
+    /// Searches Supermemory for relevant past conversations
+    /// Returns formatted context string for prompt enhancement
+    /// [Source: Story 9.3 - RAG-Enhanced AI Drafts]
+    private nonisolated func fetchRAGContext(for message: String) async -> String? {
+        // Get reference to shared instance and check if enabled
+        let service = await MainActor.run { SupermemoryService.shared }
+        let isEnabled = await MainActor.run { service.isEnabled }
+
+        // Only if Supermemory is enabled
+        guard isEnabled else {
+            return nil
+        }
+
+        do {
+            // Search memories (Cloud Function has built-in timeout)
+            let memories = try await service.searchMemories(
+                query: message,
+                limit: 3
+            )
+
+            guard !memories.isEmpty else {
+                return nil
+            }
+
+            // Format memories as context
+            let contextSection = """
+
+            Here are similar past conversations for context:
+
+            \(memories.map { $0.content }.joined(separator: "\n\n"))
+            """
+
+            return contextSection
+
+        } catch {
+            print("⚠️ [RAG] Context fetch failed: \(error.localizedDescription)")
+            return nil // Graceful degradation
+        }
+    }
+
 }
 
 // MARK: - Error Types

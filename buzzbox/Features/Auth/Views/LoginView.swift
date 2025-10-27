@@ -165,9 +165,10 @@ struct LoginView: View {
         VStack(spacing: 16) {
             // Email Field with glass effect
             HStack(spacing: 12) {
-                Image(systemName: "envelope.fill")
-                    .foregroundColor(.secondary)
-                    .frame(width: 20)
+                Image("BeeLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 20, height: 20)
 
                 TextField("Email", text: $viewModel.email)
                     .keyboardType(.emailAddress)

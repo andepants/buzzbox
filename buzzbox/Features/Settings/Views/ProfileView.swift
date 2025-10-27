@@ -51,6 +51,9 @@ struct ProfileView: View {
                             if authViewModel.currentUser?.isCreator == true {
                                 aiSettingsLink
 
+                                // AI Learning Stats (Story 9.5)
+                                AILearningStatsView()
+
                                 // Data Seeding Tool (Development)
                                 dataSeedingLink
                             }
